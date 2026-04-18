@@ -1,0 +1,18 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "pip install -r requirements-prod.txt"
+
+[deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1 --log-level info"
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+[environments.production]
+# Set these in the Railway dashboard → Variables:
+# SPOTIFY_CLIENT_ID     = <from developer.spotify.com>
+# SPOTIFY_CLIENT_SECRET = <from developer.spotify.com>
+# SPOTIFY_REDIRECT_URI  = https://<your-railway-domain>/callback
+# FRONTEND_URL          = https://<your-vercel-domain>
+# ALLOWED_ORIGINS       = https://<your-vercel-domain>

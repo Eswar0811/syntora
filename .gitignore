@@ -28,3 +28,14 @@ frontend/frontend/dist/
 # Env
 .env
 .env.local
+
+# Next.js build output
+frontend-next/.next/
+frontend-next/out/
+
+# SSL / local dev certs
+*.pem
+*.key
+
+# ML model checkpoints
+checkpoints/

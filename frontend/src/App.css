@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════
-   Spotify-inspired dark theme – TamTan
+   Spotify-inspired dark theme – Syntora
    ══════════════════════════════════════════ */
 
 *, *::before, *::after {
@@ -35,6 +35,12 @@
   --malayalam-dim: #059669;
   --malayalam-bg:  rgba(5,150,105,0.12);
   --malayalam-bdr: rgba(52,211,153,0.25);
+
+  /* Telugu – orange */
+  --telugu:     #fb923c;
+  --telugu-dim: #ea580c;
+  --telugu-bg:  rgba(234,88,12,0.12);
+  --telugu-bdr: rgba(251,146,60,0.25);
 
   /* Bilingual – amber */
   --bilingual:     #fbbf24;
@@ -79,36 +85,35 @@ body {
   gap: 0.875rem;
 }
 
-.brand-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.6rem;
-  font-weight: 700;
-  transition: background 0.3s;
+.syntora-logo {
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
+  flex-shrink: 0;
+  object-fit: cover;
 }
-.tamil-icon     { background: var(--tamil-dim);     color: #fff; }
-.hindi-icon     { background: var(--hindi-dim);     color: #fff; }
-.malayalam-icon { background: var(--malayalam-dim); color: #fff; }
 
 .brand-text {
   display: flex;
   flex-direction: column;
 }
 .brand-name {
-  font-size: 1.7rem;
+  font-size: 1.2rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  background: linear-gradient(90deg, #1db954, #0ea5e9);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 .brand-sub {
-  font-size: 0.78rem;
-  color: var(--text-mute);
-  margin-top: 2px;
+  font-size: 0.7rem;
+  font-weight: 500;
   letter-spacing: 0.04em;
+  color: var(--text-mute);
+  line-height: 1.2;
+  margin-top: 1px;
 }
 
 /* ── Main ── */
@@ -196,10 +201,12 @@ body {
 .tamil-chip.active     { background: var(--tamil-bg);     border-color: var(--tamil-bdr); }
 .hindi-chip.active     { background: var(--hindi-bg);     border-color: var(--hindi-bdr); }
 .malayalam-chip.active { background: var(--malayalam-bg); border-color: var(--malayalam-bdr); }
+.telugu-chip.active    { background: var(--telugu-bg);    border-color: var(--telugu-bdr); }
 
 .tamil-chip.active     .chip-native, .tamil-chip.active     .chip-label { color: var(--tamil); }
 .hindi-chip.active     .chip-native, .hindi-chip.active     .chip-label { color: var(--hindi); }
 .malayalam-chip.active .chip-native, .malayalam-chip.active .chip-label { color: var(--malayalam); }
+.telugu-chip.active    .chip-native, .telugu-chip.active    .chip-label { color: var(--telugu); }
 
 /* ── Textarea ── */
 .textarea-wrap {
@@ -227,6 +234,7 @@ body {
 .tamil-caret:focus     { border-color: var(--tamil-dim); }
 .hindi-caret:focus     { border-color: var(--hindi-dim); }
 .malayalam-caret:focus { border-color: var(--malayalam-dim); }
+.telugu-caret:focus    { border-color: var(--telugu-dim); }
 
 .char-count {
   position: absolute;
@@ -282,6 +290,7 @@ body {
 .mono-chip.hindi-chip.active     { background: var(--hindi-bg);     border-color: var(--hindi-bdr); }
 .mono-chip.malayalam-chip.active { background: var(--malayalam-bg); border-color: var(--malayalam-bdr); }
 .mono-chip.tamil-chip.active     { background: var(--tamil-bg);     border-color: var(--tamil-bdr); }
+.mono-chip.telugu-chip.active    { background: var(--telugu-bg);    border-color: var(--telugu-bdr); }
 
 .mono-chip.hindi-chip.active     .chip-native,
 .mono-chip.hindi-chip.active     .chip-label { color: var(--hindi); }
@@ -289,6 +298,8 @@ body {
 .mono-chip.malayalam-chip.active .chip-label { color: var(--malayalam); }
 .mono-chip.tamil-chip.active     .chip-native,
 .mono-chip.tamil-chip.active     .chip-label { color: var(--tamil); }
+.mono-chip.telugu-chip.active    .chip-native,
+.mono-chip.telugu-chip.active    .chip-label { color: var(--telugu); }
 
 /* Bilingual toggle chip */
 .bilingual-chip .chip-native {
@@ -354,10 +365,12 @@ body {
 .bi-chip.tamil-chip.active     { background: var(--tamil-bg);     border-color: var(--tamil-bdr); }
 .bi-chip.hindi-chip.active     { background: var(--hindi-bg);     border-color: var(--hindi-bdr); }
 .bi-chip.malayalam-chip.active { background: var(--malayalam-bg); border-color: var(--malayalam-bdr); }
+.bi-chip.telugu-chip.active    { background: var(--telugu-bg);    border-color: var(--telugu-bdr); }
 
 .bi-chip.tamil-chip.active     .bi-name { color: var(--tamil); }
 .bi-chip.hindi-chip.active     .bi-name { color: var(--hindi); }
 .bi-chip.malayalam-chip.active .bi-name { color: var(--malayalam); }
+.bi-chip.telugu-chip.active    .bi-name { color: var(--telugu); }
 
 /* ── Mode row ── */
 .mode-row { align-items: center; }
@@ -419,6 +432,7 @@ body {
 .tamil-btn     { background: linear-gradient(135deg, #7c3aed, #4338ca); color: #fff; }
 .hindi-btn     { background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff; }
 .malayalam-btn { background: linear-gradient(135deg, #059669, #0d9488); color: #fff; }
+.telugu-btn    { background: linear-gradient(135deg, #ea580c, #c2410c); color: #fff; }
 
 .go-btn kbd {
   font-size: 0.75rem;
@@ -438,6 +452,7 @@ body {
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
   display: inline-block;
+  will-change: transform;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -472,6 +487,7 @@ body {
 .tamil-card     { border-color: var(--tamil-bdr); }
 .hindi-card     { border-color: var(--hindi-bdr); }
 .malayalam-card { border-color: var(--malayalam-bdr); }
+.telugu-card    { border-color: var(--telugu-bdr); }
 
 .result-header {
   margin-bottom: 0.875rem;
@@ -489,6 +505,7 @@ body {
 .tamil-tag     { background: var(--tamil-bg);     color: var(--tamil);     border: 1px solid var(--tamil-bdr); }
 .hindi-tag     { background: var(--hindi-bg);     color: var(--hindi);     border: 1px solid var(--hindi-bdr); }
 .malayalam-tag { background: var(--malayalam-bg); color: var(--malayalam); border: 1px solid var(--malayalam-bdr); }
+.telugu-tag    { background: var(--telugu-bg);    color: var(--telugu);    border: 1px solid var(--telugu-bdr); }
 
 .result-text {
   font-size: 1.5rem;
@@ -518,6 +535,604 @@ body {
 .dir-badge   { color: #94a3b8; border-color: rgba(148,163,184,0.2); }
 .model-badge { color: var(--hindi); border-color: var(--hindi-bdr); }
 
+/* ── Tab switcher ── */
+.tab-switcher {
+  display: flex;
+  gap: 0.35rem;
+  background: var(--surface2);
+  border-radius: var(--radius-xl);
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+}
+
+.tab-btn {
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius-lg);
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.tab-active {
+  background: var(--surface3);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Hide transliterator main when lyrics tab is active */
+.main-hidden { display: none; }
+
+/* ── Live Lyrics Panel ── */
+.lyrics-panel {
+  margin-top: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.lyrics-center {
+  display: flex;
+  justify-content: center;
+}
+
+/* Connect card */
+.spotify-connect-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 3rem 2rem;
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  animation: cardIn 0.22s ease;
+}
+
+.connect-card-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  object-fit: cover;
+  margin-bottom: 0.25rem;
+}
+
+.spotify-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.spotify-desc {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+  max-width: 320px;
+}
+
+.spotify-btn {
+  margin-top: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 2rem;
+  background: #1db954;
+  border: none;
+  border-radius: var(--radius-xl);
+  color: #000;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.15s;
+}
+.spotify-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: scale(1.03);
+}
+.spotify-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Idle state */
+/* Toolbar row (connected badge + disconnect) */
+.lyrics-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.lyrics-connected-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1db954;
+  letter-spacing: 0.03em;
+}
+
+.lyrics-disconnect-btn {
+  font-size: 0.75rem;
+  color: var(--text-mute);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 0.3rem 0.8rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.lyrics-disconnect-btn:hover { color: #f87171; border-color: rgba(248,113,113,0.4); }
+
+/* Language selector row inside the connected lyrics panel */
+.lyrics-lang-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.lyrics-lang-strip {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+/* Reuse the same chip shape as the transliterator */
+.lyrics-lang-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-xl);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text-mute);
+  cursor: pointer;
+  font-size: 0.7rem;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.lyrics-lang-chip .chip-native { font-size: 1rem; line-height: 1; }
+.lyrics-lang-chip .chip-label  { font-size: 0.65rem; font-weight: 600; letter-spacing: 0.03em; }
+
+/* Active / hover colours per language — match the transliterator chips */
+.lyrics-lang-chip.auto-chip.active,
+.lyrics-lang-chip.auto-chip:hover       { border-color: #94a3b8; color: #e2e8f0; background: rgba(148,163,184,0.12); }
+.lyrics-lang-chip.tamil-chip.active,
+.lyrics-lang-chip.tamil-chip:hover      { border-color: #c084fc; color: #c084fc; background: rgba(192,132,252,0.12); }
+.lyrics-lang-chip.hindi-chip.active,
+.lyrics-lang-chip.hindi-chip:hover      { border-color: #38bdf8; color: #38bdf8; background: rgba(56,189,248,0.12); }
+.lyrics-lang-chip.malayalam-chip.active,
+.lyrics-lang-chip.malayalam-chip:hover  { border-color: #34d399; color: #34d399; background: rgba(52,211,153,0.12); }
+.lyrics-lang-chip.telugu-chip.active,
+.lyrics-lang-chip.telugu-chip:hover     { border-color: #fb923c; color: #fb923c; background: rgba(251,146,60,0.12); }
+
+/* Error on connect card */
+.spotify-err {
+  font-size: 0.82rem;
+  color: #f87171;
+  background: rgba(248,113,113,0.08);
+  border: 1px solid rgba(248,113,113,0.2);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.9rem;
+  width: 100%;
+  text-align: left;
+  line-height: 1.5;
+}
+.spotify-err code {
+  font-family: monospace;
+  background: rgba(0,0,0,0.3);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.78rem;
+}
+.spotify-err a { color: #93c5fd; }
+
+/* Idle state */
+.lyrics-idle {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 3rem 2rem;
+  text-align: center;
+  color: var(--text-mute);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+.lyrics-idle-icon { font-size: 2rem; }
+.lyrics-idle-sub  { font-size: 0.82rem; color: var(--text-mute); margin-top: -0.25rem; }
+
+/* Now playing */
+.lyrics-now-playing {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: cardIn 0.22s ease;
+}
+
+/* Song info header */
+.lyrics-song-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.lyrics-song-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.lyrics-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lyrics-song-name {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.lyrics-artist {
+  font-size: 0.85rem;
+  color: var(--text-mute);
+}
+
+.lyrics-progress {
+  font-size: 0.78rem;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Source badge */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-xl);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.source-curated {
+  background: rgba(251,191,36,0.12);
+  border: 1px solid rgba(251,191,36,0.3);
+  color: #fbbf24;
+}
+.source-lrclib {
+  background: rgba(52,211,153,0.1);
+  border: 1px solid rgba(52,211,153,0.25);
+  color: #34d399;
+}
+.source-whisper {
+  background: rgba(251,146,60,0.12);
+  border: 1px solid rgba(251,146,60,0.3);
+  color: #fb923c;
+}
+
+/* ── 2×2 Language Grid ── */
+.lyrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  animation: fadeSlide 0.3s ease;
+}
+
+.lang-card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: border-color 0.2s;
+  min-height: 110px;
+}
+
+.lang-card-empty {
+  opacity: 0.45;
+}
+
+/* Per-language card border + background tint */
+.tamil-card     { background: var(--tamil-bg);     border-color: var(--tamil-bdr); }
+.hindi-card     { background: var(--hindi-bg);     border-color: var(--hindi-bdr); }
+.malayalam-card { background: var(--malayalam-bg); border-color: var(--malayalam-bdr); }
+.telugu-card    { background: var(--telugu-bg);    border-color: var(--telugu-bdr); }
+
+/* Language badge inside each card */
+.lang-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-xl);
+  width: fit-content;
+}
+.tamil-badge     { background: rgba(124,58,237,0.25);  border: 1px solid var(--tamil-bdr);     color: var(--tamil); }
+.hindi-badge     { background: rgba(2,132,199,0.25);   border: 1px solid var(--hindi-bdr);     color: var(--hindi); }
+.malayalam-badge { background: rgba(5,150,105,0.25);   border: 1px solid var(--malayalam-bdr); color: var(--malayalam); }
+.telugu-badge    { background: rgba(234,88,12,0.25);   border: 1px solid var(--telugu-bdr);    color: var(--telugu); }
+
+.badge-native {
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.badge-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Script (native) text — big and bold */
+.lang-card-script {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text);
+  word-break: break-word;
+  letter-spacing: 0.01em;
+}
+
+/* Romanised (transliterated) text — smaller, accent colour */
+.lang-card-roman {
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #1db954;
+  word-break: break-word;
+  letter-spacing: 0.02em;
+}
+
+.lang-card-waiting {
+  font-size: 0.85rem;
+  color: var(--text-mute);
+  margin-top: auto;
+}
+
+/* Waiting state when no lyrics yet */
+.lyrics-waiting-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 120px;
+  color: var(--text-mute);
+}
+.lyrics-waiting-icon {
+  font-size: 2rem;
+  animation: spin 2s linear infinite;
+}
+.lyrics-waiting-text {
+  font-size: 0.9rem;
+}
+
+/* ── Lyrics language tabs ── */
+.lyrics-lang-tabs {
+  display: flex;
+  gap: 0.35rem;
+  background: var(--surface2);
+  border-radius: var(--radius-xl);
+  padding: 0.28rem;
+  border: 1px solid var(--border);
+}
+
+.lyrics-ltab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0.5rem 0.4rem;
+  border-radius: var(--radius-lg);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.lyrics-ltab:hover { background: var(--surface3); }
+
+.ltab-native {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  transition: color 0.15s;
+  line-height: 1.2;
+}
+.ltab-label {
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: var(--text-mute);
+  transition: color 0.15s;
+}
+
+/* Active tab per language */
+.lyrics-ltab.tamil-ltab.active     { background: var(--tamil-bg); }
+.lyrics-ltab.hindi-ltab.active     { background: var(--hindi-bg); }
+.lyrics-ltab.malayalam-ltab.active { background: var(--malayalam-bg); }
+.lyrics-ltab.telugu-ltab.active    { background: var(--telugu-bg); }
+
+.lyrics-ltab.tamil-ltab.active     .ltab-native,
+.lyrics-ltab.tamil-ltab.active     .ltab-label { color: var(--tamil); }
+.lyrics-ltab.hindi-ltab.active     .ltab-native,
+.lyrics-ltab.hindi-ltab.active     .ltab-label { color: var(--hindi); }
+.lyrics-ltab.malayalam-ltab.active .ltab-native,
+.lyrics-ltab.malayalam-ltab.active .ltab-label { color: var(--malayalam); }
+.lyrics-ltab.telugu-ltab.active    .ltab-native,
+.lyrics-ltab.telugu-ltab.active    .ltab-label { color: var(--telugu); }
+
+/* ── Single language display card ── */
+.lyrics-display {
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 1.25rem;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  animation: fadeSlide 0.2s ease;
+  min-height: 90px;
+}
+.tamil-display     { background: var(--tamil-bg);     border-color: var(--tamil-bdr); }
+.hindi-display     { background: var(--hindi-bg);     border-color: var(--hindi-bdr); }
+.malayalam-display { background: var(--malayalam-bg); border-color: var(--malayalam-bdr); }
+.telugu-display    { background: var(--telugu-bg);    border-color: var(--telugu-bdr); }
+
+.lyrics-display-script {
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text);
+  word-break: break-word;
+}
+.lyrics-display-roman {
+  font-size: 1.05rem;
+  font-weight: 400;
+  line-height: 1.55;
+  color: #1db954;
+  word-break: break-word;
+  letter-spacing: 0.02em;
+}
+
+
+/* ── Audio Auto-Detect Button ── */
+.audio-detect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(29,185,84,0.35);
+  background: rgba(29,185,84,0.08);
+  color: #1db954;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+.audio-detect-btn:hover:not(:disabled) {
+  background: rgba(29,185,84,0.15);
+  border-color: rgba(29,185,84,0.6);
+  transform: scale(1.02);
+}
+.audio-detect-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.audio-detect-btn.audio-recording {
+  border-color: rgba(239,68,68,0.5);
+  background: rgba(239,68,68,0.1);
+  color: #ef4444;
+  animation: mic-pulse 1s ease infinite;
+}
+.audio-detect-btn.audio-transcribing {
+  opacity: 0.75;
+  cursor: wait;
+}
+
+/* ── Audio Detect Result Card ── */
+.audio-detect-card {
+  border: 1px solid rgba(29,185,84,0.3);
+  background: rgba(29,185,84,0.05);
+}
+.audio-tag {
+  background: rgba(29,185,84,0.15);
+  color: #1db954;
+  border: 1px solid rgba(29,185,84,0.3);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.audio-close-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s;
+}
+.audio-close-btn:hover { color: var(--text); }
+
+.audio-transcribed-text {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.5;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+.audio-translations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.audio-trans-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.audio-trans-lang {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  min-width: 62px;
+  text-align: center;
+}
+.tamil-tag     { background: var(--tamil-bg);     color: var(--tamil);     border: 1px solid var(--tamil-bdr); }
+.hindi-tag     { background: var(--hindi-bg);     color: var(--hindi);     border: 1px solid var(--hindi-bdr); }
+.malayalam-tag { background: var(--malayalam-bg); color: var(--malayalam); border: 1px solid var(--malayalam-bdr); }
+.telugu-tag    { background: var(--telugu-bg);    color: var(--telugu);    border: 1px solid var(--telugu-bdr); }
+
+.audio-trans-val {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* ── Watermark ── */
+.syntora-watermark {
+  text-align: center;
+  padding: 2rem 0 1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  opacity: 0.45;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* ── Responsive ── */
 @media (max-width: 520px) {
   .converter-card { padding: 1.1rem; }
@@ -526,4 +1141,8 @@ body {
   .row-label { width: 56px; font-size: 0.62rem; }
   .go-btn    { width: 100%; justify-content: center; }
   .action-row { justify-content: stretch; }
+  .lyrics-display-script { font-size: 1.35rem; }
+  .lyrics-ltab { padding: 0.4rem 0.2rem; }
+  .ltab-native { font-size: 0.82rem; }
+  .audio-detect-btn { font-size: 0.78rem; padding: 0.45rem 0.75rem; }
 }

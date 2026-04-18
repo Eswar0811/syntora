@@ -28,9 +28,10 @@ DEVANAGARI_START = 0x0900
 DEVANAGARI_END   = 0x097F
 _DEVANAGARI_RE   = re.compile(r"[\u0900-\u097F]")
 
-HALANT   = "\u094D"  # ् virama
-ANUSVARA = "\u0902"  # ं
-VISARGA  = "\u0903"  # ः
+HALANT        = "\u094D"  # ् virama
+ANUSVARA      = "\u0902"  # ं  (bindhu)
+CHANDRABINDU  = "\u0901"  # ँ  (chandrabindu — nasal, same romanization as anusvara)
+VISARGA       = "\u0903"  # ः
 
 
 def normalize_hindi(text: str) -> str:
@@ -69,9 +70,10 @@ MATRAS: dict[str, str] = {
     "\u0948": "ai",  # ै
     "\u094B": "o",   # ो
     "\u094C": "au",  # ौ
-    ANUSVARA: "n",   # ं
-    VISARGA:  "h",   # ः
-    HALANT:   "",    # ् no inherent vowel
+    ANUSVARA:     "n",   # ं
+    CHANDRABINDU: "n",   # ँ
+    VISARGA:      "h",   # ः
+    HALANT:       "",    # ् no inherent vowel
 }
 
 CONSONANTS: dict[str, str] = {
@@ -123,20 +125,33 @@ def hindi_to_hinglish_word(word: str) -> str:
 
         # Consonant
         if ch in CONSONANTS:
-            base     = CONSONANTS[ch]
-            next_ch  = word[i + 1] if i + 1 < n else ""
+            # Check for nukta-modified form (e.g. ज + ़ = ज़ → z)
+            NUKTA   = "\u093C"
+            next_ch = word[i + 1] if i + 1 < n else ""
+            if next_ch == NUKTA:
+                combined = ch + NUKTA
+                if combined in CONSONANTS:
+                    base = CONSONANTS[combined]
+                    i += 1          # skip the nukta — consume it here
+                    next_ch = word[i + 1] if i + 1 < n else ""
+                else:
+                    base = CONSONANTS[ch]
+            else:
+                base = CONSONANTS[ch]
+
             next2_ch = word[i + 2] if i + 2 < n else ""
 
             if next_ch == HALANT:
-                # No inherent vowel
                 result.append(base)
+                i += 2
+            elif next_ch in (ANUSVARA, CHANDRABINDU):
+                # Anusvara / chandrabindu after consonant: inherent 'a' + nasal
+                result.append(base + "a" + MATRAS[next_ch])
                 i += 2
             elif next_ch in MATRAS:
                 result.append(base + MATRAS[next_ch])
                 i += 2
             else:
-                # Inherent 'a' — suppress only at word end (safest rule;
-                # avoids over-deletion that turns "namaste" into "namste")
                 at_end = (i + 1 >= n) or not is_devanagari(next_ch)
                 result.append(base if at_end else base + "a")
                 i += 1
@@ -243,6 +258,407 @@ HINGLISH_WORD_DICT: dict[str, str] = {
     "jhooth": "झूठ", "jhut": "झूठ",
     "pyaar": "प्यार", "ishq": "इश्क़",
     "zindagi": "ज़िंदगी", "duniya": "दुनिया",
+
+    # ── Song / Bollywood vocabulary ──────────────────────────────────────────
+    # Love & longing
+    "mohabbat":  "मोहब्बत",  "mohabbatein": "मोहब्बतें",
+    "pyar":      "प्यार",    "chahat":      "चाहत",
+    "dil":       "दिल",      "dilo":        "दिलों",
+    "dilse":     "दिल से",   "dil se":      "दिल से",
+    "dil mein":  "दिल में",  "dil hai":     "दिल है",
+    "dil ko":    "दिल को",   "dil ka":      "दिल का",
+    "armaan":    "अरमान",    "armaano":     "अरमानों",
+    "armaanon":  "अरमानों",  "khwaab":      "ख़्वाब",
+    "khwab":     "ख़्वाब",   "khwabon":     "ख़्वाबों",
+    "sapna":     "सपना",     "sapne":       "सपने",
+    "sapno":     "सपनों",    "arzoo":       "आरज़ू",
+    "tamanna":   "तमन्ना",   "tamannaa":    "तमन्ना",
+    "intezaar":  "इंतज़ार",  "intezar":     "इंतज़ार",
+    "wait":      "वेट",      "yaad":        "याद",
+    "yaaden":    "यादें",    "yaadon":      "यादों",
+    "yaad aana": "याद आना",  "yaad hai":    "याद है",
+    "wafa":      "वफ़ा",     "bewafa":      "बेवफ़ा",
+    "judai":     "जुदाई",    "judaai":      "जुदाई",
+    "bichadna":  "बिछड़ना",  "milna":       "मिलना",
+    "tanha":     "तन्हा",    "akela":       "अकेला",
+    "akeli":     "अकेली",    "akele":       "अकेले",
+    # Heart / soul / body
+    "rooh":      "रूह",      "jaan":        "जान",
+    "jaana":     "जाना",     "mere jaan":   "मेरी जान",
+    "meri jaan": "मेरी जान","jaaneman":    "जानेमन",
+    "jaanewala": "जानेवाला", "aankhein":    "आँखें",
+    "aankhen":   "आँखें",   "aankhon":     "आँखों",
+    "aansu":     "आँसू",    "aansoon":     "आँसुओं",
+    "aankhon mein":"आँखों में","honth":     "होंठ",
+    "hont":      "होंठ",    "haath":       "हाथ",
+    "hath":      "हाथ",     "haathon":     "हाथों",
+    # Nature / sky
+    "raat":      "रात",      "raaton":      "रातों",
+    "raat mein": "रात में",  "din":         "दिन",
+    "subah":     "सुबह",     "shaam":       "शाम",
+    "sham":      "शाम",      "dopahar":     "दोपहर",
+    "baarish":   "बारिश",    "barish":      "बारिश",
+    "baadal":    "बादल",     "bijli":       "बिजली",
+    "aakash":    "आकाश",     "aasman":      "आसमान",
+    "sitara":    "सितारा",   "sitare":      "सितारे",
+    "sitaron":   "सितारों",  "chaand":      "चाँद",
+    "chand":     "चाँद",    "chandni":      "चाँदनी",
+    "suraj":     "सूरज",     "dhoop":       "धूप",
+    "hawa":      "हवा",      "hawao":       "हवाओं",
+    "pani":      "पानी",     "darya":       "दरिया",
+    "nadiya":    "नदिया",    "kinara":      "किनारा",
+    "kinaaron":  "किनारों",  "mausam":      "मौसम",
+    "bahaar":    "बहार",     "bahar":       "बहार",
+    "phool":     "फूल",      "phoolon":     "फूलों",
+    "gulshan":   "गुलशन",   "baagho":       "बाग़ों",
+    # Emotion / feelings
+    "dard":      "दर्द",     "dardo":       "दर्दों",
+    "khushi":    "ख़ुशी",    "khushiyan":   "ख़ुशियाँ",
+    "gham":      "ग़म",      "gamo":        "ग़मों",
+    "dukh":      "दुख",      "sukh":        "सुख",
+    "chain":     "चैन",      "aaram":       "आराम",
+    "sookoon":   "सुकून",    "sukoon":      "सुकून",
+    "ehsaas":    "एहसास",    "ehsas":       "एहसास",
+    "jazbaat":   "जज़्बात",  "dhadkan":     "धड़कन",
+    "dhadkane":  "धड़कनें",  "rulaana":     "रुलाना",
+    "rona":      "रोना",     "hasna":       "हँसना",
+    "hansi":     "हँसी",     "muskaan":     "मुस्कान",
+    "muskuraan": "मुस्कुरान",
+    # Common song phrases
+    "tere bina": "तेरे बिना","tere baad":   "तेरे बाद",
+    "tere liye": "तेरे लिए","tere saath":   "तेरे साथ",
+    "mere paas": "मेरे पास","mere liye":    "मेरे लिए",
+    "mere saath":"मेरे साथ","mere bin":     "मेरे बिन",
+    "tujhse":    "तुझसे",   "tujhe":        "तुझे",
+    "mujhse":    "मुझसे",   "mujhko":       "मुझको",
+    "hume":      "हमें",    "humein":       "हमें",
+    "tumhara":   "तुम्हारा","tumhari":      "तुम्हारी",
+    "tumhare":   "तुम्हारे","tujhko":       "तुझको",
+    "kyon":      "क्यों",   "kyonki":       "क्योंकि",
+    "isliye":    "इसलिए",   "isiliye":      "इसीलिए",
+    # Verbs (conjugated — hard for rule engine)
+    "bhool":     "भूल",     "bhoola":       "भूला",
+    "bhooli":    "भूली",    "bhoole":       "भूले",
+    "bhoolna":   "भूलना",   "bhool gaye":   "भूल गए",
+    "chhod":     "छोड़",    "chhoda":       "छोड़ा",
+    "chhodna":   "छोड़ना",  "chhod diya":   "छोड़ दिया",
+    "dekh":      "देख",     "dekha":        "देखा",
+    "dekhi":     "देखी",    "dekho":        "देखो",
+    "dekhna":    "देखना",   "dekhe":        "देखे",
+    "sun":       "सुन",     "suno":         "सुनो",
+    "suna":      "सुना",    "suni":         "सुनी",
+    "sunna":     "सुनना",   "sunle":        "सुन ले",
+    "ruk":       "रुक",     "ruko":         "रुको",
+    "rukna":     "रुकना",   "bol":          "बोल",
+    "bolo":      "बोलो",    "bola":         "बोला",
+    "bolna":     "बोलना",   "keh":          "कह",
+    "kaho":      "कहो",     "kaha":         "कहा",
+    "kehna":     "कहना",    "kehdo":        "कह दो",
+    "chalna":    "चलना",    "chal":         "चल",
+    "chalo":     "चलो",     "chale":        "चले",
+    "aaja":      "आजा",     "aajao":        "आ जाओ",
+    "aana":      "आना",     "aaye":         "आए",
+    "jaana":     "जाना",    "jaoge":        "जाओगे",
+    "jayenge":   "जाएंगे",  "jaaoge":       "जाओगे",
+    "dena":      "देना",    "dedo":         "दे दो",
+    "lena":      "लेना",    "le lo":        "ले लो",
+    "reh":       "रह",      "raho":         "रहो",
+    "rehna":     "रहना",    "rahe":         "रहे",
+    "mil":       "मिल",     "milo":         "मिलो",
+    "soch":      "सोच",     "socha":        "सोचा",
+    "sochna":    "सोचना",   "maan":         "मान",
+    "maano":     "मानो",    "maana":        "माना",
+    "paana":     "पाना",    "paya":         "पाया",
+    "paaye":     "पाए",     "khona":        "खोना",
+    "khoya":     "खोया",    "khoyi":        "खोई",
+    "toot":      "टूट",     "toota":        "टूटा",
+    "tutna":     "टूटना",   "jee":          "जी",
+    "jeena":     "जीना",    "jiye":         "जिए",
+    # Particles & connectors
+    "wahan":     "वहाँ",    "yahan":        "यहाँ",
+    "idhar":     "इधर",     "udhar":        "उधर",
+    "pehle":     "पहले",    "baad":         "बाद",
+    "saath":     "साथ",     "bina":         "बिना",
+    "liye":      "लिए",     "wajah":        "वजह",
+    "wajha":     "वजह",     "bas":          "बस",
+    "sirf":      "सिर्फ़",  "zaroor":       "ज़रूर",
+    "shayad":    "शायद",    "kabhi":        "कभी",
+    "kabhi na":  "कभी ना",  "hamesha":      "हमेशा",
+    "kaafi":     "काफ़ी",   "bohat":        "बहुत",
+    "itna":      "इतना",    "itni":         "इतनी",
+    "aisa":      "ऐसा",     "aisi":         "ऐसी",
+    "waisa":     "वैसा",    "jaisa":        "जैसा",
+    "jaisi":     "जैसी",    "jaise":        "जैसे",
+    # Commonly sung words
+    "o":         "ओ",       "oh":           "ओह",
+    "aa re":     "आ रे",    "o re":         "ओ रे",
+    "arre":      "अरे",     "arrey":        "अरे",
+    "hai re":    "है रे",   "re":           "रे",
+    "na na":     "ना ना",   "la la":        "ला ला",
+    "haye":      "हाय",     "hai na":       "है ना",
+    "hai kya":   "है क्या",
+    # Nouns (song context)
+    "pal":       "पल",      "palon":        "पलों",
+    "waqt":      "वक़्त",   "samay":        "समय",
+    "door":      "दूर",     "paas":         "पास",
+    "raah":      "राह",     "raste":        "रास्ते",
+    "manzil":    "मंज़िल",  "safar":        "सफ़र",
+    "sафar":     "सफ़र",    "musafir":      "मुसाफ़िर",
+    "mohabbton": "मोहब्बतों","pyaron":      "प्यारों",
+    "baahon":    "बाहों",   "baahen":       "बाहें",
+    "teri baahon":"तेरी बाहों","gore":      "गोरे",
+    "gehra":     "गहरा",    "gehri":        "गहरी",
+    "tujhme":    "तुझमें",  "mujhme":       "मुझमें",
+    "dono":      "दोनों",   "donon":        "दोनों",
+    "sanam":     "सनम",     "jaanu":        "जानू",
+
+    # ── Verb conjugations the rule engine mis-handles ─────────────────────
+    # -ta / -ti / -te  (present habitual, masculine/feminine/plural)
+    "karta":    "करता",   "karti":    "करती",   "karte":    "करते",
+    "bolta":    "बोलता",  "bolti":    "बोलती",  "bolte":    "बोलते",
+    "chahta":   "चाहता",  "chahti":   "चाहती",  "chahte":   "चाहते",
+    "sunta":    "सुनता",  "sunti":    "सुनती",  "sunte":    "सुनते",
+    "deta":     "देता",   "deti":     "देती",   "dete":     "देते",
+    "leta":     "लेता",   "leti":     "लेती",   "lete":     "लेते",
+    "rehta":    "रहता",   "rehti":    "रहती",   "rehte":    "रहते",
+    "jata":     "जाता",   "jati":     "जाती",   "jate":     "जाते",
+    "aata":     "आता",    "aati":     "आती",    "aate":     "आते",
+    "dekhhta":  "देखता",  "dekhta":   "देखता",  "dekhti":   "देखती",
+    "hota":     "होता",   "hoti":     "होती",   "hote":     "होते",
+    "milta":    "मिलता",  "milti":    "मिलती",  "milte":    "मिलते",
+    "rota":     "रोता",   "roti":     "रोती",   "rote":     "रोते",
+    "manta":    "मानता",  "manti":    "मानती",  "mante":    "मानते",
+    "samjhta":  "समझता",  "samjhti":  "समझती",  "samjhte":  "समझते",
+    # -a / -i / -e  (simple past masculine/feminine/plural)
+    "gaya":     "गया",    "gayi":     "गई",     "gaye":     "गए",
+    "aaya":     "आया",    "aayi":     "आई",     "aaye":     "आए",
+    "hua":      "हुआ",    "hui":      "हुई",    "hue":      "हुए",
+    "tha":      "था",     "thi":      "थी",     "the":      "थे",
+    "diya":     "दिया",   "di":       "दी",     "diye":     "दिए",
+    "liya":     "लिया",   "li":       "ली",     "liye":     "लिए",
+    "kiya":     "किया",   "ki":       "की",     "kiye":     "किए",
+    "mila":     "मिला",   "mili":     "मिली",   "mile":     "मिले",
+    "raha":     "रहा",    "rahi":     "रही",    "rahe":     "रहे",
+    "khoya":    "खोया",   "khoyi":    "खोई",    "khoye":    "खोए",
+    "bola":     "बोला",   "boli":     "बोली",   "bole":     "बोले",
+    "suna":     "सुना",   "suni":     "सुनी",   "sune":     "सुने",
+    "dekha":    "देखा",   "dekhi":    "देखी",   "dekhe":    "देखे",
+    "toda":     "तोड़ा",  "todi":     "तोड़ी",  "tode":     "तोड़े",
+    "tod":      "तोड़",   "toot":     "टूट",    "toota":    "टूटा",
+    "paya":     "पाया",   "payi":     "पाई",    "paye":     "पाए",
+    "chaha":    "चाहा",   "chahi":    "चाही",   "chahe":    "चाहे",
+    "soocha":   "सोचा",   "soochi":   "सोची",   "sooche":   "सोचे",
+    "bhoola":   "भूला",   "bhooli":   "भूली",   "bhoole":   "भूले",
+    "maana":    "माना",   "maani":    "मानी",   "maane":    "माने",
+    "jaana":    "जाना",   "jaani":    "जानी",   "jaane":    "जाने",
+    "pehchana": "पहचाना", "choda":    "छोड़ा",  "chodi":    "छोड़ी",
+    # -ega / -egi / -enge  (future)
+    "karega":   "करेगा",  "karegi":   "करेगी",  "karenge":  "करेंगे",
+    "jayega":   "जाएगा",  "jayegi":   "जाएगी",  "jayenge":  "जाएंगे",
+    "aayega":   "आएगा",   "aayegi":   "आएगी",   "aayenge":  "आएंगे",
+    "hoga":     "होगा",   "hogi":     "होगी",   "honge":    "होंगे",
+    "milega":   "मिलेगा", "milegi":   "मिलेगी", "milenge":  "मिलेंगे",
+    "rahega":   "रहेगा",  "rahegi":   "रहेगी",  "rahenge":  "रहेंगे",
+    "bolega":   "बोलेगा", "bolegi":   "बोलेगी", "bolenge":  "बोलेंगे",
+    "dekhega":  "देखेगा", "dekhegi":  "देखेगी", "dekhenge": "देखेंगे",
+    # Compound / common past
+    "kar diya": "कर दिया","kar di":   "कर दी",  "kar do":   "कर दो",
+    "kar le":   "कर ले",  "kar lo":   "कर लो",  "kar liya": "कर लिया",
+    "ho gaya":  "हो गया", "ho gayi":  "हो गई",  "ho gaye":  "हो गए",
+    "aa gaya":  "आ गया",  "aa gayi":  "आ गई",   "aa gaye":  "आ गए",
+    "ja raha":  "जा रहा", "ja rahi":  "जा रही",
+    "kar raha": "कर रहा", "kar rahi": "कर रही",
+    # Often-wrong specific words
+    "saari":    "सारी",   "sari":     "साड़ी",  "saara":    "सारा",
+    "laoon":    "लाऊं",   "laaoon":   "लाऊं",   "laoonga":  "लाऊंगा",
+    "tujhpe":   "तुझपे",  "mujhpe":   "मुझपे",  "tumpe":    "तुमपे",
+    "vaaron":   "वारूँ",  "vaarun":   "वारूँ",
+    "jhoom":    "झूम",    "jhoome":   "झूमें",  "jhoomna":  "झूमना",
+    "ghoom":    "घूम",    "ghoome":   "घूमें",  "ghoomna":  "घूमना",
+    "saans":    "साँस",   "saansen":  "साँसें",
+    "teri saans":"तेरी साँसों में",
+    "raaton":   "रातों",  "raato":    "रातों",
+    "palon":    "पलों",   "pal":      "पल",
+    "khwabon":  "ख़्वाबों","armaano":  "अरमानों",
+    "aankhon mein":"आँखों में",
+    "dil mein": "दिल में","dil se":   "दिल से",
+    "mann":     "मन",     "mano":     "मनों",   "mann mein":"मन में",
+    "raat ko":  "रात को", "din ko":   "दिन को",
+    "jab":      "जब",     "tab":      "तब",     "jab bhi":  "जब भी",
+    "jaha":     "जहाँ",   "jahan":    "जहाँ",   "jab se":   "जब से",
+    "har":      "हर",     "har pal":  "हर पल",  "har roz":  "हर रोज़",
+    "har dam":  "हर दम",  "har waqt": "हर वक़्त",
+    "o re":     "ओ रे",   "o sanam":  "ओ सनम",
+    "sun le":   "सुन ले", "maan le":  "मान ले",
+    "chal":     "चल",     "chal de":  "चल दे",
+    "ruk ja":   "रुक जा", "ruk jao":  "रुक जाओ",
+    # Words the rule engine halant-splits incorrectly
+    "vaada":    "वादा",   "waada":    "वादा",   "wada":     "वादा",
+    "shikwa":   "शिकवा",  "shikwah":  "शिकवा",
+    "sakte":    "सकते",   "sakta":    "सकता",   "sakti":    "सकती",
+    "nahi sakte":"नहीं सकते","nahi sakta":"नहीं सकता",
+    "rakhna":   "रखना",   "rakha":    "रखा",    "rakh":     "रख",
+    "nikalna":  "निकलना", "nikla":    "निकला",  "nikli":    "निकली",
+    "sambhal":  "संभाल",  "sambhalna":"संभालना","sambhala":  "संभाला",
+    "muskura":  "मुस्कुरा","muskurana":"मुस्कुराना",
+    "tadap":    "तड़प",   "tadpana":  "तड़पना", "tadpa":    "तड़पा",
+    "theharna": "ठहरना",  "thehre":   "ठहरे",   "thehra":   "ठहरा",
+    "bikhar":   "बिखर",   "bikharna": "बिखरना", "bikhre":   "बिखरे",
+    "sawaal":   "सवाल",   "jawaab":   "जवाब",   "jawab":    "जवाब",
+    "khwahish": "ख्वाहिश","armaan":   "अरमान",
+    "kasam":    "कसम",    "kasme":    "क़समें",
+    "tasveer":  "तस्वीर", "tasviren": "तस्वीरें",
+    "zulfein":  "जुल्फ़ें","zulf":     "जुल्फ़",
+    "aahon":    "आहों",   "aah":      "आह",
+    "sitam":    "सितम",   "zulm":     "ज़ुल्म",
+    "woh lamhe":"वो लम्हे","lamhe":   "लम्हे",  "lamha":    "लम्हा",
+    "teri yaad":"तेरी याद","meri yaad":"मेरी याद",
+    "doori":    "दूरी",   "nazar":    "नज़र",   "nazron":   "नज़रों",
+    "aankhon":  "आँखों",  "aankhen":  "आँखें",
+    "zara":     "ज़रा",   "zara si":  "ज़रा सी",
+    "beqarar":  "बेक़रार","bekaraar":  "बेक़रार",
+    "dhadke":   "धड़के",  "dhadkane": "धड़कनें",
+    "panghat":  "पनघट",   "palkon":   "पलकों",
+    "palkein":  "पलकें",  "pal bhar": "पल भर",
+
+    # ── Family / relationships ───────────────────────────────────────────────
+    "maa":      "माँ",    "baap":     "बाप",    "papa":     "पापा",
+    "bhai":     "भाई",    "behen":    "बहन",    "beta":     "बेटा",
+    "beti":     "बेटी",   "dadi":     "दादी",   "dada":     "दादा",
+    "nani":     "नानी",   "nana":     "नाना",   "chacha":   "चाचा",
+    "chachi":   "चाची",   "mama":     "मामा",   "mami":     "मामी",
+    "bhabhi":   "भाभी",   "devar":    "देवर",   "saas":     "सास",
+    "sasur":    "ससुर",   "dulhan":   "दुल्हन", "dulha":    "दूल्हा",
+    "dost":     "दोस्त",  "yaar":     "यार",    "saathi":   "साथी",
+
+    # ── Food ──────────────────────────────────────────────────────────────────
+    "roti":     "रोटी",   "sabzi":    "सब्ज़ी", "dal":      "दाल",
+    "chawal":   "चावल",   "mithai":   "मिठाई",  "chai":     "चाय",
+    "doodh":    "दूध",    "namak":    "नमक",    "mirch":    "मिर्च",
+    "masala":   "मसाला",  "ghee":     "घी",     "biryani":  "बिरयानी",
+    "samosa":   "समोसा",  "jalebi":   "जलेबी",  "halwa":    "हलवा",
+    "lassi":    "लस्सी",  "sharbat":  "शरबत",
+
+    # ── Numbers ───────────────────────────────────────────────────────────────
+    "ek":       "एक",     "do":       "दो",      "teen":     "तीन",
+    "chaar":    "चार",    "paanch":   "पाँच",   "chhe":     "छह",
+    "saat":     "सात",    "aath":     "आठ",     "nau":      "नौ",
+    "das":      "दस",     "bees":     "बीस",    "sau":      "सौ",
+    "hazaar":   "हज़ार",
+
+    # ── Body / health ─────────────────────────────────────────────────────────
+    "sir":      "सिर",    "baal":     "बाल",    "pair":     "पैर",
+    "haath":    "हाथ",    "pet":      "पेट",    "seena":    "सीना",
+    "chehara":  "चेहरा",  "dimag":    "दिमाग",  "jism":     "जिस्म",
+    "badan":    "बदन",
+
+    # ── Common verbs / gerunds ────────────────────────────────────────────────
+    "bata":     "बता",    "batao":    "बताओ",   "batana":   "बताना",
+    "samjhao":  "समझाओ",  "karke":    "करके",   "jaake":    "जाकर",
+    "aakar":    "आकर",    "dekhke":   "देखकर",  "likhna":   "लिखना",
+    "padna":    "पढ़ना",  "nachna":   "नाचना",  "gaana":    "गाना",
+    "khelna":   "खेलना",  "larna":    "लड़ना",   "jeetna":   "जीतना",
+    "rona":     "रोना",   "hasna":    "हंसना",  "haarna":   "हारना",
+    "uthna":    "उठना",   "baithna":  "बैठना",  "sona":     "सोना",
+    "bolna":    "बोलना",  "sunna":    "सुनना",  "dekhna":   "देखना",
+    "milna":    "मिलना",  "chalna":   "चलना",   "daudna":   "दौड़ना",
+
+    # ── Phrases / social connectors ────────────────────────────────────────────
+    "pata":     "पता",    "pata nahi":"पता नहीं","pata hai": "पता है",
+    "lag raha": "लग रहा", "lagta hai":"लगता है","lagti hai":"लगती है",
+    "yahin":    "यहीं",   "wahin":    "वहीं",   "wahi":     "वही",
+    "yehi":     "यही",    "isi":      "इसी",    "usi":      "उसी",
+    "matlab":   "मतलब",   "seedha":   "सीधा",   "waise":    "वैसे",
+    "waise bhi":"वैसे भी","mushkil":  "मुश्किल","aasaan":   "आसान",
+    "sundar":   "सुंदर",  "pyaara":   "प्यारा", "pyaari":   "प्यारी",
+    "theek hai":"ठीक है", "shuruaat": "शुरुआत", "khatam":   "खत्म",
+    "galat":    "गलत",    "sahi":     "सही",    "sachchi":  "सच्ची",
+
+    # ── Song / poetry (Urdu-influenced) ───────────────────────────────────────
+    "roshni":   "रोशनी",  "noor":     "नूर",    "roshan":   "रोशन",
+    "surma":    "सुरमा",  "kajal":    "काजल",   "bindi":    "बिंदी",
+    "mehendi":  "मेहंदी", "dupatta":  "दुपट्टा","chunri":   "चुनरी",
+    "nasib":    "नसीब",   "taqdeer":  "तक़दीर",  "qismat":   "क़िस्मत",
+    "dua":      "दुआ",    "duaen":    "दुआएं",  "dawaa":    "दवा",
+    "ghazal":   "ग़ज़ल",  "sher":     "शेर",     "nazm":     "नज़्म",
+    "taraana":  "तराना",  "fariyaad": "फ़रियाद",
+    "khwaishein":"ख़्वाहिशें","aahat":  "आहट",   "mehfil":   "महफ़िल",
+    "raat bhar":"रात भर", "subah tak":"सुबह तक",
+    "teri aankhon":"तेरी आँखों","meri aankhon":"मेरी आँखों",
+    "tere dil": "तेरे दिल","mere dil": "मेरे दिल",
+    "teri yaaden":"तेरी यादें","meri duniya":"मेरी दुनिया",
+    "teri muskaan":"तेरी मुस्कान","meri jaan": "मेरी जान",
+    "teri kasam":"तेरी क़सम","bewajah":   "बेवजह",  "wajah":    "वजह",
+    "paigam":   "पैगाम",  "sandesh":  "संदेश",  "khata":    "खता",
+    "maafi":    "माफ़ी",  "माफ करो": "maaf karo","shikayat": "शिकायत",
+    "shikwa":   "शिकवा",  "gilaah":   "गिला",    "ghubaar":  "ग़ुबार",
+    "aasmaan":  "आसमान",  "zameen":   "ज़मीन",   "jahaan":   "जहान",
+    "patthar":  "पत्थर",  "rang":     "रंग",     "rangon":   "रंगों",
+    "sitaron":  "सितारों","khwabon":  "ख़्वाबों",
+
+    # ── Numbers ───────────────────────────────────────────────────────────────
+    "ek":       "एक",     "do":       "दो",      "teen":     "तीन",
+    "chaar":    "चार",    "paanch":   "पाँच",   "chhah":    "छह",
+    "saat":     "सात",    "aath":     "आठ",     "nau":      "नौ",
+    "das":      "दस",     "gyaarah":  "ग्यारह", "baarah":   "बारह",
+    "bis":      "बीस",    "pachaas":  "पचास",   "sau":      "सौ",
+    "hazaar":   "हज़ार",  "laakh":    "लाख",
+
+    # ── Colors ────────────────────────────────────────────────────────────────
+    "laal":     "लाल",    "peela":    "पीला",    "neela":    "नीला",
+    "hara":     "हरा",    "safed":    "सफ़ेद",   "kaala":    "काला",
+    "narangi":  "नारंगी", "gulaabi":  "गुलाबी",  "baingani": "बैंगनी",
+    "bhura":    "भूरा",   "grey":     "ग्रे",    "sunhara":  "सुनहरा",
+
+    # ── Body parts (extended) ─────────────────────────────────────────────────
+    "aankhein": "आँखें",  "kaan":     "कान",     "naak":     "नाक",
+    "muh":      "मुँह",   "dant":     "दाँत",   "baal":     "बाल",
+    "gardhan":  "गर्दन",  "kandha":   "कंधा",   "peetha":   "पीठ",
+    "pet":      "पेट",    "haath":    "हाथ",     "pair":     "पैर",
+    "ungli":    "उंगली",  "nakh":     "नख",      "ghutna":   "घुटना",
+
+    # ── Daily life (extended) ─────────────────────────────────────────────────
+    "ghar":     "घर",     "kamra":    "कमरा",   "darwaza":  "दरवाज़ा",
+    "khidki":   "खिड़की", "chhath":   "छत",      "seedhi":   "सीढ़ी",
+    "school":   "स्कूल",  "kitaab":   "किताब",   "kalam":    "क़लम",
+    "machine":  "मशीन",   "phone":    "फ़ोन",    "computer": "कंप्यूटर",
+    "sadak":    "सड़क",   "gaadi":    "गाड़ी",   "bus":      "बस",
+    "train":    "ट्रेन",  "havai jahaz":"हवाई जहाज़",
+
+    # ── Verbs (infinitive / gerunds, extended) ───────────────────────────────
+    "bhaagna":  "भागना",  "koodna":   "कूदना",   "uthana":   "उठाना",
+    "rakhna":   "रखना",   "dhundna":  "ढूंढना",  "paana":    "पाना",
+    "banana":   "बनाना",  "todna":    "तोड़ना",  "kholna":   "खोलना",
+    "band karna":"बंद करना","saaf karna":"साफ़ करना","bharna":  "भरना",
+    "khaana":   "खाना",   "peena":    "पीना",    "pukarna":  "पुकारना",
+    "bulana":   "बुलाना", "dekhna":   "देखना",   "dikhaana": "दिखाना",
+
+    # ── Time (extended) ───────────────────────────────────────────────────────
+    "subha":    "सुबह",   "dopahar":  "दोपहर",   "shaam":    "शाम",
+    "raat":     "रात",    "aaj":      "आज",      "kal bhi":  "कल भी",
+    "har din":  "हर दिन", "puri raat":"पूरी रात","din bhar":  "दिन भर",
+    "thodi der":"थोड़ी देर","kuch pal": "कुछ पल","ek din":   "एक दिन",
+    "mahina":   "महीना",  "saal":     "साल",     "ghanta":   "घंटा",
+    "minute":   "मिनट",   "second":   "सेकंड",
+
+    # ── Emotions / states (extended) ─────────────────────────────────────────
+    "thaka":    "थका",    "thaki":    "थकी",     "thake":    "थके",
+    "bhookha":  "भूखा",   "pyaasa":   "प्यासा",  "neend":    "नींद",
+    "khwaab":   "ख़्वाब", "sapne mein":"सपने में","jaagna":   "जागना",
+    "hosh":     "होश",    "pagal":    "पागल",    "bekarar":  "बेक़रार",
+    "majboor":  "मजबूर",  "bebas":    "बेबस",    "aazad":    "आज़ाद",
+    "khushi se":"ख़ुशी से","dukh mein":"दुख में",
+    "dil dhadakta":"दिल धड़कता","rooh kaanpti":"रूह काँपती",
+    "neend udana":"नींद उड़ाना","aankhon mein aansu":"आँखों में आँसू",
+    "hothon pe": "होठों पे","haathon mein":"हाथों में",
+    "waqt guzarna":"वक़्त गुज़रना","pal bitana":"पल बिताना",
+
+    # ── Common conjunctions / transitions ─────────────────────────────────────
+    "jabse":    "जबसे",   "tabse":    "तबसे",    "jitna":    "जितना",
+    "utna":     "उतना",   "jaisa":    "जैसा",    "waisa":    "वैसा",
+    "phir bhi": "फिर भी", "tab bhi":  "तब भी",   "fir se":   "फिर से",
+    "aur bhi":  "और भी",  "naaki":    "नाकि",    "warna":    "वरना",
+    "tabhi":    "तभी",    "yahi":     "यही",     "wahi sab": "वही सब",
 }
 
 # Vowel → dependent matra (after consonant). "a"→"" means inherent vowel.

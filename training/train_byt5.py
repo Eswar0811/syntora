@@ -152,13 +152,12 @@ def preprocess(examples, tokenizer):
         truncation=True,
         padding=False,
     )
-    with tokenizer.as_target_tokenizer():
-        labels = tokenizer(
-            targets,
-            max_length=MAX_TARGET_LEN,
-            truncation=True,
-            padding=False,
-        )
+    labels = tokenizer(
+        targets,
+        max_length=MAX_TARGET_LEN,
+        truncation=True,
+        padding=False,
+    )
 
     # Replace pad token id with -100 so loss ignores padding
     labels_ids = [
@@ -235,7 +234,7 @@ def train(
         learning_rate=lr,
         warmup_steps=warmup_steps,
         weight_decay=0.01,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="cer",
@@ -252,7 +251,6 @@ def train(
         args=args,
         train_dataset=tokenized_train,
         eval_dataset=tokenized_eval,
-        tokenizer=tokenizer,
         data_collator=collator,
         compute_metrics=compute_metrics_fn(tokenizer),
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],

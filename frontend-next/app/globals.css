@@ -1,0 +1,196 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ── */
+:root {
+  --bg:        #121212;
+  --surface:   #181818;
+  --surface2:  #282828;
+  --surface3:  #333333;
+  --text:      #ffffff;
+  --muted:     #b3b3b3;
+  --green:     #1db954;
+  --green-hov: #1ed760;
+
+  --color-tamil:     #c084fc;
+  --color-hindi:     #38bdf8;
+  --color-malayalam: #34d399;
+  --color-telugu:    #fb923c;
+
+  --radius-card: 12px;
+  --radius-tab:  9999px;
+}
+
+/* ── Base ── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont,
+               'Segoe UI', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar        { width: 5px; }
+::-webkit-scrollbar-track  { background: var(--surface); }
+::-webkit-scrollbar-thumb  { background: var(--surface3); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ── Selection ── */
+::selection { background: rgba(29,185,84,0.25); }
+
+/* ── Utility: gradient brand text ── */
+.text-gradient-brand {
+  background: linear-gradient(135deg, #1db954 0%, #17a349 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Language script display ── */
+.script-display {
+  font-size: 1.75rem;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  transition: all 0.25s ease;
+}
+
+.roman-display {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: var(--green);
+  font-weight: 500;
+  transition: all 0.25s ease;
+}
+
+/* ── Idle state dot blink ── */
+/* Use transform+opacity together so both stay on the Composite layer */
+@keyframes blink {
+  0%, 100% { transform: scale(1);    opacity: 1;   }
+  50%       { transform: scale(0.85); opacity: 0.3; }
+}
+.blink { animation: blink 1.8s ease-in-out infinite; will-change: transform, opacity; }
+
+/* ── Progress bar shimmer ── */
+/* translate3d keeps the animation on the GPU Composite layer */
+@keyframes shimmer {
+  0%   { transform: translate3d(-200%, 0, 0); }
+  100% { transform: translate3d( 200%, 0, 0); }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface2);
+  border-radius: 4px;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 25%, var(--surface3) 50%, transparent 75%);
+  animation: shimmer 1.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* ── Card glass effect ── */
+.card-glass {
+  background: var(--surface);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-card);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* ── Progress bar ── */
+.progress-bar-track {
+  background: var(--surface3);
+  border-radius: 99px;
+  height: 3px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  width: var(--progress-pct, 0%);
+  background: var(--green);
+  border-radius: 99px;
+  transition: width 1s linear;
+}
+
+/* ── Spotify button ── */
+.btn-spotify {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  background: var(--green);
+  color: #000;
+  font-weight: 700;
+  font-size: 0.9rem;
+  border: none;
+  border-radius: 99px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.btn-spotify:hover {
+  background: var(--green-hov);
+  transform: scale(1.02);
+  box-shadow: 0 4px 20px rgba(29,185,84,0.4);
+}
+.btn-spotify:active { transform: scale(0.98); }
+.btn-spotify:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Language tab ── */
+.lang-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.lang-tab:hover { background: var(--surface2); color: var(--text); }
+.lang-tab-native { font-size: 0.95rem; font-weight: 700; }
+
+/* ── Source badge ── */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  border: 1px solid;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Responsive ── */
+@media (max-width: 520px) {
+  .script-display { font-size: 1.4rem; }
+  .lang-tab        { padding: 8px 12px; font-size: 0.73rem; }
+  .lang-tab-native { font-size: 0.85rem; }
+}
