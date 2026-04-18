@@ -3,11 +3,11 @@
 # Rule-based transliteration still works perfectly without torch/transformers.
 # For full neural engines, use requirements.txt on a machine with ≥2 GB RAM.
 
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
-pydantic==2.7.1
-requests>=2.31.0
-urllib3>=2.0.0
-python-dotenv>=1.0.0
-python-multipart>=0.0.9
-sse-starlette>=1.6.5
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.11.3
+requests>=2.32.0
+urllib3>=2.2.0
+python-dotenv>=1.0.1
+python-multipart>=0.0.20
+sse-starlette>=2.2.1
