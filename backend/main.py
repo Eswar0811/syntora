@@ -491,11 +491,15 @@ async def _get_spotify_state(access_token: str) -> dict:
 
 @app.get("/spotify/current")
 async def spotify_current(request: Request):
-    """Polling endpoint. Rate-limited to 120 req/min per IP."""
-    ip = request.client.host if request.client else "0.0.0.0"
-    if not _allow_request(f"spotify:{ip}", max_req=120, window=60.0):
-        raise HTTPException(429, "Rate limit exceeded — slow down the polling interval")
+    """Polling endpoint. Rate-limited per session (90 req/min) to support multiple users per IP."""
     sid = _get_session_id(request)
+    # Per-session rate limit: 90 req/min = 1.5 req/s, comfortable headroom over 1s polling
+    if not _allow_request(f"spotify_sess:{sid}", max_req=90, window=60.0):
+        raise HTTPException(429, "Rate limit exceeded — slow down the polling interval")
+    # Secondary per-IP guard against unauthenticated flood (3000 req/min = ~50 sessions per IP)
+    ip = request.client.host if request.client else "0.0.0.0"
+    if not _allow_request(f"spotify_ip:{ip}", max_req=3000, window=60.0):
+        raise HTTPException(429, "Rate limit exceeded")
     access_token = await _ensure_valid_token(sid)
     state = await _get_spotify_state(access_token)
     return JSONResponse(content=state)

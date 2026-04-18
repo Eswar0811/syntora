@@ -27,7 +27,7 @@ export default function LiveLyrics({ authStatus, authError, onConnect, onDisconn
     return <ConnectCard status={authStatus} error={authError} onConnect={onConnect} />;
   }
 
-  /* ── First-connect loading ── */
+  /* ── First-connect loading (no data yet) ── */
   if (isLoading && !data) {
     return (
       <div className="card-glass p-8 text-center">
@@ -39,12 +39,16 @@ export default function LiveLyrics({ authStatus, authError, onConnect, onDisconn
     );
   }
 
-  /* ── Hard error with no data yet ── */
+  /* ── Hard error with no data yet — show retry banner ── */
   if (error && !data) {
     return (
       <div className="card-glass p-8 text-center">
         <p className="mb-2 text-sm font-semibold text-red-400">Connection error</p>
         <p className="text-xs text-[#b3b3b3]">{error}</p>
+        <div className="mt-4 flex justify-center">
+          <Spinner />
+        </div>
+        <p className="mt-2 text-xs text-[#b3b3b3]/60">Reconnecting automatically…</p>
       </div>
     );
   }
@@ -54,8 +58,17 @@ export default function LiveLyrics({ authStatus, authError, onConnect, onDisconn
     return <IdleCard error={error} />;
   }
 
-  /* ── Now playing ── */
-  return <NowPlaying data={data} transport={transport} />;
+  /* ── Now playing — keep showing lyrics even if there's a transient error ── */
+  return (
+    <>
+      {error && (
+        <div className="mb-2 rounded-lg bg-yellow-500/10 px-3 py-1.5 text-center text-xs text-yellow-400">
+          {error}
+        </div>
+      )}
+      <NowPlaying data={data} transport={transport} />
+    </>
+  );
 }
 
 function Spinner() {

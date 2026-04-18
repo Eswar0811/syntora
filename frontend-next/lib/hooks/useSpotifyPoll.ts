@@ -9,16 +9,19 @@ interface UseSpotifyPollOptions {
   onUnauthorized: () => void;
 }
 
+const MAX_BACKOFF_MS = 30_000;
+
 export function useSpotifyPoll({ enabled, onUnauthorized }: UseSpotifyPollOptions) {
   const [data, setData] = useState<SpotifyCurrentResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const enabledRef = useRef(enabled);
-  const inflightRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const enabledRef        = useRef(enabled);
+  const inflightRef       = useRef(false);
+  const timerRef          = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef          = useRef<AbortController | null>(null);
   const onUnauthorizedRef = useRef(onUnauthorized);
+  const errCountRef       = useRef(0);
 
   useEffect(() => { enabledRef.current = enabled; }, [enabled]);
   useEffect(() => { onUnauthorizedRef.current = onUnauthorized; }, [onUnauthorized]);
@@ -44,24 +47,28 @@ export function useSpotifyPoll({ enabled, onUnauthorized }: UseSpotifyPollOption
       }
 
       if (res.status === 429) {
-        nextDelay = 12000;
-        setError('Rate limited — slowing down');
+        errCountRef.current += 1;
+        nextDelay = Math.min(12_000 * errCountRef.current, MAX_BACKOFF_MS);
+        setError('Rate limited — retrying shortly');
         return;
       }
 
       if (!res.ok) {
-        nextDelay = 6000;
-        setError(`Server error ${res.status}`);
+        errCountRef.current += 1;
+        nextDelay = Math.min(3_000 * Math.pow(2, errCountRef.current - 1), MAX_BACKOFF_MS);
+        setError(`Server error ${res.status} — retrying`);
         return;
       }
 
       const json: SpotifyCurrentResponse = await res.json();
+      errCountRef.current = 0;
       setData(json);
       setError(null);
       nextDelay = json.is_playing ? 1000 : 3000;
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
-      nextDelay = 6000;
+      errCountRef.current += 1;
+      nextDelay = Math.min(3_000 * Math.pow(2, errCountRef.current - 1), MAX_BACKOFF_MS);
       setError('Connection error — retrying');
     } finally {
       inflightRef.current = false;
@@ -77,10 +84,12 @@ export function useSpotifyPoll({ enabled, onUnauthorized }: UseSpotifyPollOption
       abortRef.current?.abort();
       setData(null);
       setError(null);
+      errCountRef.current = 0;
       return;
     }
 
     setIsLoading(true);
+    errCountRef.current = 0;
     doPoll().finally(() => setIsLoading(false));
 
     return () => {
