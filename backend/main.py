@@ -164,6 +164,25 @@ async def _ensure_valid_token() -> str:
     return _token["access_token"]
 
 
+# ── Self-ping to prevent Render free tier from sleeping ───────────────────────
+async def _keep_alive():
+    """Ping own /health every 4 minutes so Render never idles out."""
+    import httpx
+    host = os.environ.get("RENDER_EXTERNAL_URL", "")
+    if not host:
+        return  # only runs on Render (env var set automatically by Render)
+    url = f"{host}/health"
+    await asyncio.sleep(60)  # wait for startup before first ping
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.get(url)
+            logger.debug("Keep-alive ping sent to %s", url)
+        except Exception:
+            pass
+        await asyncio.sleep(240)  # every 4 minutes
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -171,7 +190,9 @@ async def lifespan(_app: FastAPI):
     get_engine()
     get_telugu_engine()
     logger.info("Engines ready.")
+    task = asyncio.create_task(_keep_alive())
     yield
+    task.cancel()
     logger.info("Shutting down Syntora API.")
 
 
