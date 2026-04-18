@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SpotifyCurrentResponse } from '../types';
-import { sessionHeaders } from '../api';
 
 interface UseSpotifyPollOptions {
   enabled: boolean;
@@ -12,8 +11,8 @@ interface UseSpotifyPollOptions {
 const MAX_BACKOFF_MS = 30_000;
 
 export function useSpotifyPoll({ enabled, onUnauthorized }: UseSpotifyPollOptions) {
-  const [data, setData]         = useState<SpotifyCurrentResponse | null>(null);
-  const [error, setError]       = useState<string | null>(null);
+  const [data, setData]           = useState<SpotifyCurrentResponse | null>(null);
+  const [error, setError]         = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const enabledRef        = useRef(enabled);
@@ -28,17 +27,13 @@ export function useSpotifyPoll({ enabled, onUnauthorized }: UseSpotifyPollOption
 
   const doPoll = useCallback(async () => {
     if (!enabledRef.current || inflightRef.current) return;
-
     inflightRef.current = true;
     const controller = new AbortController();
     abortRef.current  = controller;
     let nextDelay     = 3000;
 
     try {
-      const res = await fetch('/api/spotify/current', {
-        signal:  controller.signal,
-        headers: sessionHeaders(),
-      });
+      const res = await fetch('/api/spotify/current', { signal: controller.signal });
 
       if (res.status === 401) { onUnauthorizedRef.current(); return; }
 
@@ -83,11 +78,9 @@ export function useSpotifyPoll({ enabled, onUnauthorized }: UseSpotifyPollOption
       errCountRef.current = 0;
       return;
     }
-
     setIsLoading(true);
     errCountRef.current = 0;
     doPoll().finally(() => setIsLoading(false));
-
     return () => {
       timerRef.current && clearTimeout(timerRef.current);
       abortRef.current?.abort();

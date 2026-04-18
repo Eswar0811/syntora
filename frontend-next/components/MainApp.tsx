@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { AuthStatus } from '@/lib/types';
-import { getSpotifyAuthUrl, spotifyLogout, setSessionId, clearSessionId, getSessionId } from '@/lib/api';
+import { getSpotifyAuthUrl, spotifyLogout, markConnected, markDisconnected, isConnected } from '@/lib/api';
 import LiveLyrics from './LiveLyrics';
 
 export default function MainApp() {
@@ -13,25 +13,20 @@ export default function MainApp() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('idle');
   const [authError, setAuthError]   = useState<string | null>(null);
 
-  // Restore session on page load
   useEffect(() => {
-    if (getSessionId()) setAuthStatus('authed');
+    if (isConnected()) setAuthStatus('authed');
   }, []);
 
-  // Handle OAuth callback: /?spotify=connected&sid=<uuid>
   useEffect(() => {
     const spotify = searchParams.get('spotify');
     const reason  = searchParams.get('reason');
-
     if (spotify === 'connected') {
-      const sid = searchParams.get('sid');
-      if (sid) setSessionId(sid);
+      markConnected();
       setAuthStatus('authed');
     } else if (spotify === 'error') {
       setAuthStatus('error');
       setAuthError(reason ?? 'Unknown error');
     }
-
     if (spotify) router.replace('/');
   }, [searchParams, router]);
 
@@ -39,8 +34,7 @@ export default function MainApp() {
     setAuthStatus('exchanging');
     setAuthError(null);
     try {
-      const { url, session_id } = await getSpotifyAuthUrl();
-      setSessionId(session_id);   // store before redirect so it survives OAuth round-trip
+      const url = await getSpotifyAuthUrl();
       window.location.href = url;
     } catch {
       setAuthStatus('error');
@@ -50,7 +44,7 @@ export default function MainApp() {
 
   const handleDisconnect = useCallback(async () => {
     await spotifyLogout();
-    clearSessionId();
+    markDisconnected();
     setAuthStatus('idle');
     setAuthError(null);
   }, []);
@@ -62,13 +56,10 @@ export default function MainApp() {
           <div className="flex items-center gap-3">
             <img src="/syntora-logo.png" alt="Syntora" className="h-10 w-10 rounded-xl object-cover" />
             <div>
-              <span className="text-gradient-brand text-xl font-extrabold tracking-tight">
-                Syntora
-              </span>
+              <span className="text-gradient-brand text-xl font-extrabold tracking-tight">Syntora</span>
               <p className="text-xs text-[#b3b3b3]">Your Song, Your Vibe!</p>
             </div>
           </div>
-
           {authStatus === 'authed' && (
             <button
               type="button"
