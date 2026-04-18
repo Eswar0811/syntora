@@ -139,7 +139,7 @@ class ByT5SongEngine:
             logger.info(f"Loading shared ByT5 song model: {self.MODEL_ID}")
             self.tokenizer = AutoTokenizer.from_pretrained(self.MODEL_ID)
             self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                self.MODEL_ID, torch_dtype=torch.float32
+                self.MODEL_ID, dtype=torch.float32
             ).to(self.device)
             self.model.eval()
             self._ready = True

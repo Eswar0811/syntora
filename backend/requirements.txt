@@ -1,22 +1,13 @@
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
-pydantic==2.7.1
-requests>=2.31.0
-urllib3>=2.0.0
-python-dotenv>=1.0.0
-python-multipart>=0.0.9
-sse-starlette>=1.6.5
+# ── Syntora Backend — Production (no ML/Whisper) ──────────────────────────────
+# Use this file for free-tier Railway / Render / Fly.io deployments.
+# Rule-based transliteration still works perfectly without torch/transformers.
+# For full neural engines, use requirements-neural.txt on a machine with ≥2 GB RAM.
 
-# ── ML / Neural engines (optional — heavy, ~2 GB) ────────────────────────────
-# Omit these for free-tier cloud deployment. Use requirements-prod.txt instead.
-transformers>=4.40.0
-torch>=2.2.0
-sentencepiece>=0.2.0
-protobuf>=4.25.0
-datasets>=2.19.0
-evaluate>=0.4.2
-accelerate>=0.29.0
-jiwer>=3.0.4
-
-# ── Audio fallback (optional — requires system ffmpeg) ────────────────────────
-openai-whisper>=20231117
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.11.3
+requests>=2.32.0
+urllib3>=2.2.0
+python-dotenv>=1.0.1
+python-multipart>=0.0.20
+sse-starlette>=2.2.1
