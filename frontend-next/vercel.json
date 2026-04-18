@@ -3,8 +3,5 @@
   "name": "syntora-app",
   "framework": "nextjs",
   "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "env": {
-    "BACKEND_URL": "@backend-url"
-  }
+  "outputDirectory": ".next"
 }
