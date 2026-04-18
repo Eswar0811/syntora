@@ -13,7 +13,6 @@ import logging
 import os
 import re
 import time
-import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from threading import Lock
@@ -22,12 +21,6 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, field_validator
-
-try:
-    from sse_starlette.sse import EventSourceResponse
-    _SSE_AVAILABLE = True
-except ImportError:
-    _SSE_AVAILABLE = False
 
 from byt5_engine import get_engine, normalize_tamil
 from hindi_engine import get_hindi_engine
@@ -46,8 +39,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Config ──────────────────────────────────────────────────────────────────
-_FRONTEND_URL   = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+# ── Config ────────────────────────────────────────────────────────────────────
+_FRONTEND_URL    = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 _DEFAULT_ORIGINS = f"{_FRONTEND_URL},http://localhost:3000,http://localhost:5175"
 _ALLOWED_ORIGINS = [
     o.strip()
@@ -55,7 +48,7 @@ _ALLOWED_ORIGINS = [
     if o.strip()
 ]
 
-# ── Rate limiting (sliding window, in-memory) ────────────────────────────────
+# ── Rate limiting (sliding window, in-memory) ─────────────────────────────────
 _rate_store: dict[str, list[float]] = defaultdict(list)
 _rate_lock = Lock()
 
@@ -78,7 +71,6 @@ _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _sanitize(text: str) -> str:
-    """Remove ASCII control characters; leave all Unicode (Indic scripts) intact."""
     return _CTRL_RE.sub("", text).strip()
 
 
@@ -130,6 +122,48 @@ class SongRequest(BaseModel):
         return _sanitize(v)
 
 
+# ── Single-user token store ───────────────────────────────────────────────────
+_token: dict = {}          # {access_token, refresh_token, expires_at}
+_token_lock: asyncio.Lock | None = None
+_SAFE_REASON_RE = re.compile(r"[^a-zA-Z0-9_\-]")
+_SYNC_OFFSET = 0.4
+
+
+def _get_token_lock() -> asyncio.Lock:
+    global _token_lock
+    if _token_lock is None:
+        _token_lock = asyncio.Lock()
+    return _token_lock
+
+
+def _token_expiry(data: dict) -> float:
+    return time.time() + data.get("expires_in", 3600) - 60
+
+
+async def _ensure_valid_token() -> str:
+    if not _token or not _token.get("access_token"):
+        raise HTTPException(401, "Not authenticated — please connect Spotify")
+
+    if _token.get("expires_at", 0) > time.time():
+        return _token["access_token"]
+
+    async with _get_token_lock():
+        if _token.get("expires_at", 0) > time.time():
+            return _token["access_token"]
+        try:
+            data = spotify_mod.refresh_access_token(_token["refresh_token"])
+            _token["access_token"] = data["access_token"]
+            _token["expires_at"]   = _token_expiry(data)
+            if "refresh_token" in data:
+                _token["refresh_token"] = data["refresh_token"]
+            logger.info("Spotify: token refreshed")
+        except Exception as exc:
+            _token.clear()
+            raise HTTPException(401, f"Token refresh failed — please reconnect: {exc}")
+
+    return _token["access_token"]
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -142,7 +176,7 @@ async def lifespan(_app: FastAPI):
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Syntora API", version="2.1.0", lifespan=lifespan)
+app = FastAPI(title="Syntora API", version="3.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -156,7 +190,6 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def _global_exc(request: Request, exc: Exception):
     logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, exc)
-    # Never expose internal details in the response body
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -174,21 +207,18 @@ async def convert(req: ConvertRequest):
 
 @app.post("/hindi/convert")
 async def hindi_convert(req: HindiRequest):
-    """Bidirectional Hindi ↔ Hinglish — offline rule-based engine."""
     engine = get_hindi_engine()
     return JSONResponse(content=engine.convert(req.text))
 
 
 @app.post("/malayalam/convert")
 async def malayalam_convert(req: MalayalamRequest):
-    """Bidirectional Malayalam ↔ Manglish — offline rule-based engine."""
     engine = get_malayalam_engine()
     return JSONResponse(content=engine.convert(req.text))
 
 
 @app.post("/telugu/convert")
 async def telugu_convert(req: TeluguRequest):
-    """Bidirectional Telugu ↔ Tenglish — rule-based + ByT5 neural correction."""
     engine = get_telugu_engine()
     return JSONResponse(content=engine.convert(req.text))
 
@@ -202,7 +232,7 @@ async def song_convert(req: SongRequest):
 # ── Audio transcription ───────────────────────────────────────────────────────
 
 _ALLOWED_AUDIO_EXTS = frozenset({"webm", "mp3", "wav", "ogg", "m4a", "mp4", "flac"})
-_MAX_AUDIO_BYTES    = 10 * 1024 * 1024  # 10 MB
+_MAX_AUDIO_BYTES    = 10 * 1024 * 1024
 
 
 @app.post("/audio/transcribe")
@@ -213,10 +243,7 @@ async def audio_transcribe(request: Request, file: UploadFile = File(...)):
 
     whisper = get_whisper_engine()
     if not whisper._ready:
-        raise HTTPException(
-            503,
-            "Whisper not available. Install openai-whisper and ffmpeg to enable audio detection.",
-        )
+        raise HTTPException(503, "Whisper not available — install openai-whisper and ffmpeg")
 
     audio_bytes = await file.read()
     if not audio_bytes:
@@ -265,8 +292,6 @@ _ALL_LANG_PAIRS = [
     ("telugu",    "tenglish",  "tenglish"),
 ]
 
-# Translation cache: lyric line text → {tamil, tanglish, hindi, hinglish, …}
-# Manual LRU: evict oldest entry when full.
 _translation_cache: dict[str, dict] = {}
 _MAX_TRANSLATION_CACHE = 400
 
@@ -293,85 +318,22 @@ def _get_translations(text: str) -> dict:
 
 
 def _detect_script_language(lyrics_list: list[dict]) -> str | None:
-    """Detect ISO 639-1 language from Unicode script of the first few lyric lines."""
     for line in (lyrics_list or [])[:5]:
         for ch in line.get("text", ""):
             cp = ord(ch)
-            if 0x0B80 <= cp <= 0x0BFF: return "ta"   # Tamil
-            if 0x0900 <= cp <= 0x097F: return "hi"   # Hindi / Devanagari
-            if 0x0D00 <= cp <= 0x0D7F: return "ml"   # Malayalam
-            if 0x0C00 <= cp <= 0x0C7F: return "te"   # Telugu
+            if 0x0B80 <= cp <= 0x0BFF: return "ta"
+            if 0x0900 <= cp <= 0x097F: return "hi"
+            if 0x0D00 <= cp <= 0x0D7F: return "ml"
+            if 0x0C00 <= cp <= 0x0C7F: return "te"
     return None
 
 
 # ── Spotify integration ───────────────────────────────────────────────────────
 
-# ── Multi-user session store ──────────────────────────────────────────────────
-# Each user gets a UUID session_id generated at /spotify/auth-url.
-# It travels through the OAuth state param, gets stored in the browser's
-# localStorage, and is sent back on every request as X-Session-ID header.
-
-_sessions: dict[str, dict] = {}          # session_id → token data
-_session_locks: dict[str, asyncio.Lock] = {}  # session_id → refresh lock
-_SESSION_TTL = 24 * 3600                  # auto-expire sessions after 24 h
-
-_SYNC_OFFSET = 0.4
-_SAFE_REASON_RE = re.compile(r"[^a-zA-Z0-9_\-]")
-
-
-def _token_expiry(data: dict) -> float:
-    return time.time() + data.get("expires_in", 3600) - 60
-
-
-def _get_session_id(request: Request) -> str:
-    sid = request.headers.get("X-Session-ID", "").strip()
-    if not sid:
-        raise HTTPException(401, "No session — please connect Spotify first")
-    return sid
-
-
-def _purge_expired_sessions() -> None:
-    now = time.time()
-    expired = [sid for sid, s in _sessions.items()
-               if s.get("expires_at", 0) + _SESSION_TTL < now]
-    for sid in expired:
-        _sessions.pop(sid, None)
-        _session_locks.pop(sid, None)
-
-
-async def _ensure_valid_token(session_id: str) -> str:
-    """Return a valid access token for this session, refreshing if expired."""
-    session = _sessions.get(session_id)
-    if not session or not session.get("access_token"):
-        raise HTTPException(401, "Not authenticated — please reconnect Spotify")
-
-    if session.get("expires_at", 0) > time.time():
-        return session["access_token"]
-
-    lock = _session_locks.setdefault(session_id, asyncio.Lock())
-    async with lock:
-        session = _sessions.get(session_id, {})
-        if session.get("expires_at", 0) > time.time():
-            return session["access_token"]
-        try:
-            data = spotify_mod.refresh_access_token(session["refresh_token"])
-            session["access_token"] = data["access_token"]
-            session["expires_at"]   = _token_expiry(data)
-            if "refresh_token" in data:
-                session["refresh_token"] = data["refresh_token"]
-            logger.info("Spotify: token refreshed for session %s", session_id[:8])
-        except Exception as exc:
-            _sessions.pop(session_id, None)
-            raise HTTPException(401, f"Token refresh failed — please reconnect: {exc}")
-
-    return _sessions[session_id]["access_token"]
-
-
 @app.get("/callback")
 async def spotify_oauth_callback(
     code: str = None, error: str = None, state: str = None
 ):
-    """Spotify redirects here with ?code=…&state=session_id after user grants access."""
     if error:
         safe_reason = _SAFE_REASON_RE.sub("", error)[:64]
         logger.warning("Spotify OAuth denied: %s", safe_reason)
@@ -380,53 +342,38 @@ async def spotify_oauth_callback(
         logger.error("Spotify OAuth callback: no code received")
         return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=error&reason=no_code")
 
-    session_id = state if state and len(state) == 36 else str(uuid.uuid4())
-
     try:
         data = spotify_mod.exchange_code(code)
-        _sessions[session_id] = {
+        _token.clear()
+        _token.update({
             "access_token":  data["access_token"],
             "refresh_token": data.get("refresh_token", ""),
             "expires_at":    _token_expiry(data),
-        }
-        _purge_expired_sessions()
-        logger.info("Spotify: token exchange OK for session %s", session_id[:8])
+        })
+        logger.info("Spotify: token exchange OK")
     except Exception as exc:
         logger.error("Spotify code exchange failed: %s", exc)
         return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=error&reason=exchange_failed")
 
-    return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=connected&sid={session_id}")
+    return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=connected")
 
 
 @app.get("/spotify/auth-url")
 async def spotify_auth_url():
     if not spotify_mod.CLIENT_ID:
         raise HTTPException(500, "SPOTIFY_CLIENT_ID env var not set on the server")
-    session_id = str(uuid.uuid4())
-    url = spotify_mod.get_auth_url(state=session_id)
-    logger.info("Spotify auth URL issued for session %s", session_id[:8])
-    return {"url": url, "redirect_uri": spotify_mod.REDIRECT_URI, "session_id": session_id}
+    url = spotify_mod.get_auth_url(state="")
+    return {"url": url, "redirect_uri": spotify_mod.REDIRECT_URI}
 
 
 @app.post("/spotify/logout")
-async def spotify_logout(request: Request):
-    """Clear this user's Spotify session only — other users are unaffected."""
-    try:
-        sid = _get_session_id(request)
-        _sessions.pop(sid, None)
-        _session_locks.pop(sid, None)
-        logger.info("Spotify: session %s logged out", sid[:8])
-    except HTTPException:
-        pass
+async def spotify_logout():
+    _token.clear()
+    logger.info("Spotify: logged out")
     return {"status": "ok"}
 
 
 async def _get_spotify_state(access_token: str) -> dict:
-    """
-    Core logic shared by /spotify/current (polling) and /spotify/stream (SSE).
-    Returns the full state dict ready to JSON-encode.
-    Raises HTTPException(502) on Spotify API failure.
-    """
     try:
         playback = spotify_mod.get_currently_playing(access_token)
     except Exception as exc:
@@ -458,8 +405,6 @@ async def _get_spotify_state(access_token: str) -> dict:
                         "Whisper: '%s' lang=%s %d segment(s)",
                         playback["song"], detected_lang, len(w_lines),
                     )
-            else:
-                logger.warning("Whisper not ready — install openai-whisper + ffmpeg")
         else:
             no_preview = True
 
@@ -491,95 +436,12 @@ async def _get_spotify_state(access_token: str) -> dict:
 
 @app.get("/spotify/current")
 async def spotify_current(request: Request):
-    """Polling endpoint. Rate-limited per session (90 req/min) to support multiple users per IP."""
-    sid = _get_session_id(request)
-    # Per-session rate limit: 90 req/min = 1.5 req/s, comfortable headroom over 1s polling
-    if not _allow_request(f"spotify_sess:{sid}", max_req=90, window=60.0):
-        raise HTTPException(429, "Rate limit exceeded — slow down the polling interval")
-    # Secondary per-IP guard against unauthenticated flood (3000 req/min = ~50 sessions per IP)
     ip = request.client.host if request.client else "0.0.0.0"
-    if not _allow_request(f"spotify_ip:{ip}", max_req=3000, window=60.0):
-        raise HTTPException(429, "Rate limit exceeded")
-    access_token = await _ensure_valid_token(sid)
+    if not _allow_request(f"spotify:{ip}", max_req=120, window=60.0):
+        raise HTTPException(429, "Rate limit exceeded — slow down the polling interval")
+    access_token = await _ensure_valid_token()
     state = await _get_spotify_state(access_token)
     return JSONResponse(content=state)
-
-
-@app.get("/spotify/stream")
-async def spotify_stream(request: Request, sid: str = None):
-    """
-    Server-Sent Events endpoint. Pushes a JSON event whenever the playing
-    track or active lyric line changes. Sends a heartbeat ping every cycle
-    to keep the connection alive and detect disconnects early.
-    """
-    if not _SSE_AVAILABLE:
-        raise HTTPException(
-            501,
-            "SSE not available — install sse-starlette: pip install sse-starlette",
-        )
-
-    ip = request.client.host if request.client else "0.0.0.0"
-    logger.info("SSE: client connected (%s)", ip)
-
-    # Accept session_id from query param (EventSource) or header (fetch)
-    sid = sid or request.headers.get("X-Session-ID", "").strip()
-    if not sid:
-        raise HTTPException(401, "No session — please connect Spotify first")
-
-    async def event_generator():
-        last_key: tuple | None = None   # (track_id, lyric_line) — change detection
-        consecutive_errors = 0
-
-        while True:
-            if await request.is_disconnected():
-                logger.info("SSE: client disconnected (%s)", ip)
-                return
-
-            # ── Token ─────────────────────────────────────────────────────
-            try:
-                access_token = await _ensure_valid_token(sid)
-            except HTTPException as exc:
-                if exc.status_code == 401:
-                    yield {
-                        "event": "auth_error",
-                        "data": json.dumps({"code": 401, "message": "Not authenticated"}),
-                    }
-                    return
-                await asyncio.sleep(3)
-                continue
-
-            # ── State ─────────────────────────────────────────────────────
-            try:
-                state = await _get_spotify_state(access_token)
-                consecutive_errors = 0
-            except HTTPException as exc:
-                consecutive_errors += 1
-                logger.warning("SSE error #%d: %s", consecutive_errors, exc.detail)
-                backoff = min(2 ** consecutive_errors, 30)
-                await asyncio.sleep(backoff)
-                continue
-
-            # ── Emit only on change, heartbeat otherwise ───────────────────
-            change_key = (
-                (state.get("track_id"), state.get("original"))
-                if state.get("is_playing")
-                else ("idle", None)
-            )
-            if change_key != last_key:
-                last_key = change_key
-                yield {"event": "update", "data": json.dumps(state)}
-            else:
-                yield {"event": "ping", "data": ""}
-
-            await asyncio.sleep(1.0 if state.get("is_playing") else 3.0)
-
-    return EventSourceResponse(
-        event_generator(),
-        headers={
-            "Cache-Control":    "no-cache, no-transform",
-            "X-Accel-Buffering": "no",   # disable Nginx/proxy buffering
-        },
-    )
 
 
 @app.get("/health")

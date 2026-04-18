@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { AuthStatus } from '@/lib/types';
-import { getSpotifyAuthUrl, spotifyLogout, setSessionId, clearSessionId, getSessionId } from '@/lib/api';
+import { getSpotifyAuthUrl, spotifyLogout, markConnected, markDisconnected, isConnected } from '@/lib/api';
 import LiveLyrics from './LiveLyrics';
 
 export default function MainApp() {
@@ -13,20 +13,18 @@ export default function MainApp() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('idle');
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Restore session on page load if sid exists in localStorage
+  // Restore connected state on page load
   useEffect(() => {
-    const existing = getSessionId();
-    if (existing) setAuthStatus('authed');
+    if (isConnected()) setAuthStatus('authed');
   }, []);
 
-  // Handle OAuth callback params from backend redirect
+  // Handle OAuth callback — backend redirects to /?spotify=connected
   useEffect(() => {
     const spotify = searchParams.get('spotify');
     const reason  = searchParams.get('reason');
 
     if (spotify === 'connected') {
-      const sid = searchParams.get('sid');
-      if (sid) setSessionId(sid);
+      markConnected();
       setAuthStatus('authed');
     } else if (spotify === 'error') {
       setAuthStatus('error');
@@ -50,7 +48,7 @@ export default function MainApp() {
 
   const handleDisconnect = useCallback(async () => {
     await spotifyLogout();
-    clearSessionId();
+    markDisconnected();
     setAuthStatus('idle');
     setAuthError(null);
   }, []);
@@ -58,7 +56,6 @@ export default function MainApp() {
   return (
     <main className="min-h-dvh bg-[#121212]">
       <div className="mx-auto max-w-2xl px-4 pb-16 pt-8 sm:px-6">
-        {/* ── Header ── */}
         <header className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src="/syntora-logo.png" alt="Syntora" className="h-10 w-10 rounded-xl object-cover" />
@@ -82,7 +79,6 @@ export default function MainApp() {
           )}
         </header>
 
-        {/* ── Main content ── */}
         <LiveLyrics
           authStatus={authStatus}
           authError={authError}
@@ -90,7 +86,6 @@ export default function MainApp() {
           onDisconnect={handleDisconnect}
         />
 
-        {/* ── Footer ── */}
         <footer className="mt-12 text-center text-xs font-bold tracking-widest uppercase text-[#b3b3b3]/40">
           Syntora
         </footer>
