@@ -18,15 +18,21 @@ const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8000';
 export async function GET(req: NextRequest) {
   let upstream: Response;
 
+  // Forward sid query param so the backend can identify the session
+  const sid = req.nextUrl.searchParams.get('sid') ?? '';
+  const backendUrl = sid
+    ? `${BACKEND}/spotify/stream?sid=${encodeURIComponent(sid)}`
+    : `${BACKEND}/spotify/stream`;
+
   try {
-    upstream = await fetch(`${BACKEND}/spotify/stream`, {
+    upstream = await fetch(backendUrl, {
       headers: {
         Accept: 'text/event-stream',
         'Cache-Control': 'no-cache',
-        // Forward the real client IP so the backend rate-limiter sees it
         'X-Forwarded-For': req.headers.get('x-forwarded-for') ?? '',
+        // Also forward as header in case backend reads it that way
+        ...(sid ? { 'X-Session-ID': sid } : {}),
       },
-      // Edge fetch supports streaming body — no need for any extra flags
     });
   } catch {
     // Backend unreachable — send a single SSE error event and close
