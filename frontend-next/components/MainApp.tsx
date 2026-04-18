@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { AuthStatus } from '@/lib/types';
-import { getSpotifyAuthUrl, spotifyLogout, setSessionId, clearSessionId } from '@/lib/api';
+import { getSpotifyAuthUrl, spotifyLogout, setSessionId, clearSessionId, getSessionId } from '@/lib/api';
 import LiveLyrics from './LiveLyrics';
 
 export default function MainApp() {
@@ -13,10 +13,16 @@ export default function MainApp() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('idle');
   const [authError, setAuthError] = useState<string | null>(null);
 
-  /* Read OAuth callback params injected by the backend redirect */
+  // Restore session on page load if sid exists in localStorage
+  useEffect(() => {
+    const existing = getSessionId();
+    if (existing) setAuthStatus('authed');
+  }, []);
+
+  // Handle OAuth callback params from backend redirect
   useEffect(() => {
     const spotify = searchParams.get('spotify');
-    const reason = searchParams.get('reason');
+    const reason  = searchParams.get('reason');
 
     if (spotify === 'connected') {
       const sid = searchParams.get('sid');
@@ -51,12 +57,10 @@ export default function MainApp() {
 
   return (
     <main className="min-h-dvh bg-[#121212]">
-      {/* Page wrapper — max-width centered */}
       <div className="mx-auto max-w-2xl px-4 pb-16 pt-8 sm:px-6">
         {/* ── Header ── */}
         <header className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Logo mark */}
             <img src="/syntora-logo.png" alt="Syntora" className="h-10 w-10 rounded-xl object-cover" />
             <div>
               <span className="text-gradient-brand text-xl font-extrabold tracking-tight">
@@ -66,9 +70,9 @@ export default function MainApp() {
             </div>
           </div>
 
-          {/* Disconnect button — only shown when authed */}
           {authStatus === 'authed' && (
             <button
+              type="button"
               onClick={handleDisconnect}
               className="rounded-full border border-white/10 px-4 py-1.5 text-xs font-semibold
                          text-[#b3b3b3] transition hover:border-white/20 hover:text-white"
