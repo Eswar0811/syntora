@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from threading import Lock
@@ -48,7 +49,7 @@ _ALLOWED_ORIGINS = [
     if o.strip()
 ]
 
-# ── Rate limiting (sliding window, in-memory) ─────────────────────────────────
+# ── Rate limiting ─────────────────────────────────────────────────────────────
 _rate_store: dict[str, list[float]] = defaultdict(list)
 _rate_lock = Lock()
 
@@ -122,65 +123,83 @@ class SongRequest(BaseModel):
         return _sanitize(v)
 
 
-# ── Single-user token store ───────────────────────────────────────────────────
-_token: dict = {}          # {access_token, refresh_token, expires_at}
-_token_lock: asyncio.Lock | None = None
+# ── Multi-user session store ──────────────────────────────────────────────────
+# Each user gets a UUID session_id at /spotify/auth-url.
+# It travels through OAuth state param, stored in browser localStorage,
+# sent back on every request as X-Session-ID header.
+
+_sessions: dict[str, dict] = {}           # sid → {access_token, refresh_token, expires_at}
+_session_locks: dict[str, asyncio.Lock] = {}
+_SESSION_TTL = 24 * 3600                   # expire sessions after 24 h
 _SAFE_REASON_RE = re.compile(r"[^a-zA-Z0-9_\-]")
 _SYNC_OFFSET = 0.4
-
-
-def _get_token_lock() -> asyncio.Lock:
-    global _token_lock
-    if _token_lock is None:
-        _token_lock = asyncio.Lock()
-    return _token_lock
 
 
 def _token_expiry(data: dict) -> float:
     return time.time() + data.get("expires_in", 3600) - 60
 
 
-async def _ensure_valid_token() -> str:
-    if not _token or not _token.get("access_token"):
-        raise HTTPException(401, "Not authenticated — please connect Spotify")
+def _get_session_id(request: Request) -> str:
+    sid = request.headers.get("X-Session-ID", "").strip()
+    if not sid:
+        raise HTTPException(401, "No session — please connect Spotify first")
+    return sid
 
-    if _token.get("expires_at", 0) > time.time():
-        return _token["access_token"]
 
-    async with _get_token_lock():
-        if _token.get("expires_at", 0) > time.time():
-            return _token["access_token"]
+def _purge_expired_sessions() -> None:
+    now = time.time()
+    expired = [sid for sid, s in _sessions.items()
+               if s.get("expires_at", 0) + _SESSION_TTL < now]
+    for sid in expired:
+        _sessions.pop(sid, None)
+        _session_locks.pop(sid, None)
+    if expired:
+        logger.info("Purged %d expired session(s)", len(expired))
+
+
+async def _ensure_valid_token(sid: str) -> str:
+    session = _sessions.get(sid)
+    if not session or not session.get("access_token"):
+        raise HTTPException(401, "Not authenticated — please reconnect Spotify")
+
+    if session.get("expires_at", 0) > time.time():
+        return session["access_token"]
+
+    lock = _session_locks.setdefault(sid, asyncio.Lock())
+    async with lock:
+        session = _sessions.get(sid, {})
+        if session.get("expires_at", 0) > time.time():
+            return session["access_token"]
         try:
-            data = spotify_mod.refresh_access_token(_token["refresh_token"])
-            _token["access_token"] = data["access_token"]
-            _token["expires_at"]   = _token_expiry(data)
+            data = spotify_mod.refresh_access_token(session["refresh_token"])
+            session["access_token"] = data["access_token"]
+            session["expires_at"]   = _token_expiry(data)
             if "refresh_token" in data:
-                _token["refresh_token"] = data["refresh_token"]
-            logger.info("Spotify: token refreshed")
+                session["refresh_token"] = data["refresh_token"]
+            logger.info("Token refreshed for session %s", sid[:8])
         except Exception as exc:
-            _token.clear()
+            _sessions.pop(sid, None)
             raise HTTPException(401, f"Token refresh failed — please reconnect: {exc}")
 
-    return _token["access_token"]
+    return _sessions[sid]["access_token"]
 
 
-# ── Self-ping to prevent Render free tier from sleeping ───────────────────────
+# ── Self-ping keep-alive (prevents Render free tier sleeping) ─────────────────
 async def _keep_alive():
-    """Ping own /health every 4 minutes so Render never idles out."""
     import httpx
     host = os.environ.get("RENDER_EXTERNAL_URL", "")
     if not host:
-        return  # only runs on Render (env var set automatically by Render)
+        return
     url = f"{host}/health"
-    await asyncio.sleep(60)  # wait for startup before first ping
+    await asyncio.sleep(60)
     while True:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 await client.get(url)
-            logger.debug("Keep-alive ping sent to %s", url)
+            logger.debug("Keep-alive ping OK")
         except Exception:
             pass
-        await asyncio.sleep(240)  # every 4 minutes
+        await asyncio.sleep(240)
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -197,13 +216,13 @@ async def lifespan(_app: FastAPI):
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Syntora API", version="3.0.0", lifespan=lifespan)
+app = FastAPI(title="Syntora API", version="3.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "X-Session-ID"],
     allow_credentials=False,
 )
 
@@ -349,7 +368,17 @@ def _detect_script_language(lyrics_list: list[dict]) -> str | None:
     return None
 
 
-# ── Spotify integration ───────────────────────────────────────────────────────
+# ── Spotify OAuth ─────────────────────────────────────────────────────────────
+
+@app.get("/spotify/auth-url")
+async def spotify_auth_url():
+    if not spotify_mod.CLIENT_ID:
+        raise HTTPException(500, "SPOTIFY_CLIENT_ID env var not set on the server")
+    sid = str(uuid.uuid4())
+    url = spotify_mod.get_auth_url(state=sid)
+    logger.info("Auth URL issued for session %s", sid[:8])
+    return {"url": url, "session_id": sid}
+
 
 @app.get("/callback")
 async def spotify_oauth_callback(
@@ -360,37 +389,35 @@ async def spotify_oauth_callback(
         logger.warning("Spotify OAuth denied: %s", safe_reason)
         return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=error&reason={safe_reason}")
     if not code:
-        logger.error("Spotify OAuth callback: no code received")
         return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=error&reason=no_code")
+
+    sid = state if state and len(state) == 36 else str(uuid.uuid4())
 
     try:
         data = spotify_mod.exchange_code(code)
-        _token.clear()
-        _token.update({
+        _sessions[sid] = {
             "access_token":  data["access_token"],
             "refresh_token": data.get("refresh_token", ""),
             "expires_at":    _token_expiry(data),
-        })
-        logger.info("Spotify: token exchange OK")
+        }
+        _purge_expired_sessions()
+        logger.info("Token exchange OK for session %s", sid[:8])
     except Exception as exc:
-        logger.error("Spotify code exchange failed: %s", exc)
+        logger.error("Token exchange failed: %s", exc)
         return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=error&reason=exchange_failed")
 
-    return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=connected")
-
-
-@app.get("/spotify/auth-url")
-async def spotify_auth_url():
-    if not spotify_mod.CLIENT_ID:
-        raise HTTPException(500, "SPOTIFY_CLIENT_ID env var not set on the server")
-    url = spotify_mod.get_auth_url(state="")
-    return {"url": url, "redirect_uri": spotify_mod.REDIRECT_URI}
+    return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=connected&sid={sid}")
 
 
 @app.post("/spotify/logout")
-async def spotify_logout():
-    _token.clear()
-    logger.info("Spotify: logged out")
+async def spotify_logout(request: Request):
+    try:
+        sid = _get_session_id(request)
+        _sessions.pop(sid, None)
+        _session_locks.pop(sid, None)
+        logger.info("Session %s logged out", sid[:8])
+    except HTTPException:
+        pass
     return {"status": "ok"}
 
 
@@ -422,10 +449,6 @@ async def _get_spotify_state(access_token: str) -> dict:
                     detected_lang = w_lines[0].get("language") or detected_lang
                     using_whisper = True
                     source        = "whisper"
-                    logger.info(
-                        "Whisper: '%s' lang=%s %d segment(s)",
-                        playback["song"], detected_lang, len(w_lines),
-                    )
         else:
             no_preview = True
 
@@ -457,34 +480,20 @@ async def _get_spotify_state(access_token: str) -> dict:
 
 @app.get("/spotify/current")
 async def spotify_current(request: Request):
-    ip = request.client.host if request.client else "0.0.0.0"
-    if not _allow_request(f"spotify:{ip}", max_req=120, window=60.0):
-        raise HTTPException(429, "Rate limit exceeded — slow down the polling interval")
-    access_token = await _ensure_valid_token()
+    sid = _get_session_id(request)
+    # Per-session rate limit: 90 req/min — comfortable at 1s polling
+    if not _allow_request(f"sess:{sid}", max_req=90, window=60.0):
+        raise HTTPException(429, "Rate limit exceeded — slow down polling")
+    access_token = await _ensure_valid_token(sid)
     state = await _get_spotify_state(access_token)
     return JSONResponse(content=state)
 
 
 @app.get("/health")
 async def health():
-    tamil_engine   = get_engine()
-    hindi_engine   = get_hindi_engine()
-    mal_engine     = get_malayalam_engine()
-    tel_engine     = get_telugu_engine()
-    song_engine    = get_song_engine()
-    whisper_engine = get_whisper_engine()
     return {
-        "status":                 "ok",
-        "tamil_neural_ready":     tamil_engine._ready,
-        "hindi_neural_ready":     hindi_engine._ready,
-        "malayalam_neural_ready": mal_engine._ready,
-        "telugu_neural_ready":    tel_engine._ready,
-        "song_neural_ready":      song_engine._ready,
-        "whisper_ready":          whisper_engine._ready,
-        "tamil_model":     tamil_engine.MODEL_ID,
-        "hindi_model":     hindi_engine.MODEL_ID  if hindi_engine._ready  else "rule-based",
-        "malayalam_model": mal_engine.MODEL_ID    if mal_engine._ready    else "rule-based",
-        "telugu_model":    tel_engine.MODEL_ID    if tel_engine._ready    else "rule-based",
-        "song_model":      song_engine.MODEL_ID   if song_engine._ready   else "rule-based",
-        "whisper_model":   f"whisper-{whisper_engine.model_size}" if whisper_engine._ready else "unavailable",
+        "status":              "ok",
+        "active_sessions":     len(_sessions),
+        "tamil_neural_ready":  get_engine()._ready,
+        "telugu_neural_ready": get_telugu_engine()._ready,
     }

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { AuthStatus } from '@/lib/types';
-import { getSpotifyAuthUrl, spotifyLogout, markConnected, markDisconnected, isConnected } from '@/lib/api';
+import { getSpotifyAuthUrl, spotifyLogout, setSessionId, clearSessionId, getSessionId } from '@/lib/api';
 import LiveLyrics from './LiveLyrics';
 
 export default function MainApp() {
@@ -11,20 +11,21 @@ export default function MainApp() {
   const router = useRouter();
 
   const [authStatus, setAuthStatus] = useState<AuthStatus>('idle');
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authError, setAuthError]   = useState<string | null>(null);
 
-  // Restore connected state on page load
+  // Restore session on page load
   useEffect(() => {
-    if (isConnected()) setAuthStatus('authed');
+    if (getSessionId()) setAuthStatus('authed');
   }, []);
 
-  // Handle OAuth callback — backend redirects to /?spotify=connected
+  // Handle OAuth callback: /?spotify=connected&sid=<uuid>
   useEffect(() => {
     const spotify = searchParams.get('spotify');
     const reason  = searchParams.get('reason');
 
     if (spotify === 'connected') {
-      markConnected();
+      const sid = searchParams.get('sid');
+      if (sid) setSessionId(sid);
       setAuthStatus('authed');
     } else if (spotify === 'error') {
       setAuthStatus('error');
@@ -38,7 +39,8 @@ export default function MainApp() {
     setAuthStatus('exchanging');
     setAuthError(null);
     try {
-      const url = await getSpotifyAuthUrl();
+      const { url, session_id } = await getSpotifyAuthUrl();
+      setSessionId(session_id);   // store before redirect so it survives OAuth round-trip
       window.location.href = url;
     } catch {
       setAuthStatus('error');
@@ -48,7 +50,7 @@ export default function MainApp() {
 
   const handleDisconnect = useCallback(async () => {
     await spotifyLogout();
-    markDisconnected();
+    clearSessionId();
     setAuthStatus('idle');
     setAuthError(null);
   }, []);

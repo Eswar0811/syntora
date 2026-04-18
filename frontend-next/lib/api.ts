@@ -1,32 +1,38 @@
 const API = '/api';
+const SESSION_KEY = 'syntora_sid';
 
-const CONNECTED_KEY = 'syntora_connected';
-
-export function isConnected(): boolean {
-  return typeof window !== 'undefined' && localStorage.getItem(CONNECTED_KEY) === 'true';
+export function getSessionId(): string {
+  return (typeof window !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null) ?? '';
 }
 
-export function markConnected(): void {
-  if (typeof window !== 'undefined') localStorage.setItem(CONNECTED_KEY, 'true');
+export function setSessionId(sid: string): void {
+  if (typeof window !== 'undefined') localStorage.setItem(SESSION_KEY, sid);
 }
 
-export function markDisconnected(): void {
-  if (typeof window !== 'undefined') localStorage.removeItem(CONNECTED_KEY);
+export function clearSessionId(): void {
+  if (typeof window !== 'undefined') localStorage.removeItem(SESSION_KEY);
 }
 
-export async function getSpotifyAuthUrl(): Promise<string> {
+export function sessionHeaders(): Record<string, string> {
+  const sid = getSessionId();
+  return sid ? { 'X-Session-ID': sid } : {};
+}
+
+export async function getSpotifyAuthUrl(): Promise<{ url: string; session_id: string }> {
   const res = await fetch(`${API}/spotify/auth-url`);
   if (!res.ok) throw new Error(`Auth URL fetch failed: ${res.status}`);
-  const data = await res.json();
-  return data.url as string;
+  return res.json();
 }
 
 export async function spotifyLogout(): Promise<void> {
-  await fetch(`${API}/spotify/logout`, { method: 'POST' });
-  markDisconnected();
+  await fetch(`${API}/spotify/logout`, {
+    method: 'POST',
+    headers: sessionHeaders(),
+  });
+  clearSessionId();
 }
 
-export async function healthCheck(): Promise<Record<string, boolean>> {
+export async function healthCheck(): Promise<Record<string, unknown>> {
   const res = await fetch(`${API}/health`);
   if (!res.ok) throw new Error('Health check failed');
   return res.json();
