@@ -40,7 +40,7 @@ _session.mount("https://", _adapter)
 _session.mount("http://", _adapter)
 
 
-def get_auth_url() -> str:
+def get_auth_url(state: str = "") -> str:
     params = {
         "client_id":     CLIENT_ID,
         "response_type": "code",
@@ -48,6 +48,8 @@ def get_auth_url() -> str:
         "scope":         SCOPE,
         "show_dialog":   "false",
     }
+    if state:
+        params["state"] = state
     return f"{_AUTH_BASE}/authorize?{urlencode(params)}"
 
 

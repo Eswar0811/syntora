@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { AuthStatus } from '@/lib/types';
-import { getSpotifyAuthUrl, spotifyLogout } from '@/lib/api';
+import { getSpotifyAuthUrl, spotifyLogout, setSessionId, clearSessionId } from '@/lib/api';
 import LiveLyrics from './LiveLyrics';
 
 export default function MainApp() {
@@ -19,6 +19,8 @@ export default function MainApp() {
     const reason = searchParams.get('reason');
 
     if (spotify === 'connected') {
+      const sid = searchParams.get('sid');
+      if (sid) setSessionId(sid);
       setAuthStatus('authed');
     } else if (spotify === 'error') {
       setAuthStatus('error');
@@ -42,6 +44,7 @@ export default function MainApp() {
 
   const handleDisconnect = useCallback(async () => {
     await spotifyLogout();
+    clearSessionId();
     setAuthStatus('idle');
     setAuthError(null);
   }, []);

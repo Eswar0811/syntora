@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SpotifyCurrentResponse } from '../types';
+import { sessionHeaders } from '../api';
 
 interface UseSpotifyPollOptions {
   enabled: boolean;
@@ -32,7 +33,10 @@ export function useSpotifyPoll({ enabled, onUnauthorized }: UseSpotifyPollOption
     let nextDelay = 3000;
 
     try {
-      const res = await fetch('/api/spotify/current', { signal: controller.signal });
+      const res = await fetch('/api/spotify/current', {
+        signal: controller.signal,
+        headers: sessionHeaders(),
+      });
 
       if (res.status === 401) {
         onUnauthorizedRef.current();

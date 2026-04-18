@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { SpotifyCurrentResponse } from '../types';
+import { getSessionId } from '../api';
 
 interface Options {
   enabled: boolean;
@@ -43,7 +44,8 @@ export function useSpotifySSE({ enabled, onUnauthorized, onFallback }: Options) 
     setIsLoading(true);
     errorCountRef.current = 0;
 
-    const es = new EventSource('/api/spotify/stream');
+    const sid = getSessionId();
+    const es = new EventSource(`/api/spotify/stream${sid ? `?sid=${encodeURIComponent(sid)}` : ''}`);
     esRef.current = es;
 
     es.addEventListener('update', (e: MessageEvent) => {

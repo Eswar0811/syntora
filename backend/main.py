@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from threading import Lock
@@ -305,16 +306,16 @@ def _detect_script_language(lyrics_list: list[dict]) -> str | None:
 
 # ── Spotify integration ───────────────────────────────────────────────────────
 
-# Single-user in-memory token store. Production multi-user deployments should
-# replace this with a per-session store (e.g. Redis + signed cookies).
-_spotify_tokens: dict = {}
+# ── Multi-user session store ──────────────────────────────────────────────────
+# Each user gets a UUID session_id generated at /spotify/auth-url.
+# It travels through the OAuth state param, gets stored in the browser's
+# localStorage, and is sent back on every request as X-Session-ID header.
 
-# Prevents two concurrent requests from both triggering a token refresh
-_refresh_lock = asyncio.Lock()
+_sessions: dict[str, dict] = {}          # session_id → token data
+_session_locks: dict[str, asyncio.Lock] = {}  # session_id → refresh lock
+_SESSION_TTL = 24 * 3600                  # auto-expire sessions after 24 h
 
-_SYNC_OFFSET = 0.4   # seconds added to Spotify progress to compensate API round-trip
-
-# Sanitise the OAuth error reason before embedding it in a redirect URL
+_SYNC_OFFSET = 0.4
 _SAFE_REASON_RE = re.compile(r"[^a-zA-Z0-9_\-]")
 
 
@@ -322,38 +323,55 @@ def _token_expiry(data: dict) -> float:
     return time.time() + data.get("expires_in", 3600) - 60
 
 
-async def _ensure_valid_token() -> str:
-    """Return a valid access token, refreshing it if expired. Concurrency-safe."""
-    if not _spotify_tokens.get("access_token"):
-        raise HTTPException(401, "Not authenticated — visit /spotify/auth-url first")
+def _get_session_id(request: Request) -> str:
+    sid = request.headers.get("X-Session-ID", "").strip()
+    if not sid:
+        raise HTTPException(401, "No session — please connect Spotify first")
+    return sid
 
-    # Fast path: token still valid
-    if _spotify_tokens.get("expires_at", 0) > time.time():
-        return _spotify_tokens["access_token"]
 
-    async with _refresh_lock:
-        # Double-check: another coroutine may have refreshed while we waited
-        if _spotify_tokens.get("expires_at", 0) > time.time():
-            return _spotify_tokens["access_token"]
+def _purge_expired_sessions() -> None:
+    now = time.time()
+    expired = [sid for sid, s in _sessions.items()
+               if s.get("expires_at", 0) + _SESSION_TTL < now]
+    for sid in expired:
+        _sessions.pop(sid, None)
+        _session_locks.pop(sid, None)
 
+
+async def _ensure_valid_token(session_id: str) -> str:
+    """Return a valid access token for this session, refreshing if expired."""
+    session = _sessions.get(session_id)
+    if not session or not session.get("access_token"):
+        raise HTTPException(401, "Not authenticated — please reconnect Spotify")
+
+    if session.get("expires_at", 0) > time.time():
+        return session["access_token"]
+
+    lock = _session_locks.setdefault(session_id, asyncio.Lock())
+    async with lock:
+        session = _sessions.get(session_id, {})
+        if session.get("expires_at", 0) > time.time():
+            return session["access_token"]
         try:
-            data = spotify_mod.refresh_access_token(_spotify_tokens["refresh_token"])
-            _spotify_tokens["access_token"] = data["access_token"]
-            _spotify_tokens["expires_at"]   = _token_expiry(data)
+            data = spotify_mod.refresh_access_token(session["refresh_token"])
+            session["access_token"] = data["access_token"]
+            session["expires_at"]   = _token_expiry(data)
             if "refresh_token" in data:
-                _spotify_tokens["refresh_token"] = data["refresh_token"]
-            logger.info("Spotify: access token refreshed")
+                session["refresh_token"] = data["refresh_token"]
+            logger.info("Spotify: token refreshed for session %s", session_id[:8])
         except Exception as exc:
-            # Force re-auth — stale refresh tokens must not loop forever
-            _spotify_tokens.clear()
+            _sessions.pop(session_id, None)
             raise HTTPException(401, f"Token refresh failed — please reconnect: {exc}")
 
-    return _spotify_tokens["access_token"]
+    return _sessions[session_id]["access_token"]
 
 
 @app.get("/callback")
-async def spotify_oauth_callback(code: str = None, error: str = None):
-    """Spotify redirects here with ?code=… after the user grants access."""
+async def spotify_oauth_callback(
+    code: str = None, error: str = None, state: str = None
+):
+    """Spotify redirects here with ?code=…&state=session_id after user grants access."""
     if error:
         safe_reason = _SAFE_REASON_RE.sub("", error)[:64]
         logger.warning("Spotify OAuth denied: %s", safe_reason)
@@ -361,31 +379,45 @@ async def spotify_oauth_callback(code: str = None, error: str = None):
     if not code:
         logger.error("Spotify OAuth callback: no code received")
         return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=error&reason=no_code")
+
+    session_id = state if state and len(state) == 36 else str(uuid.uuid4())
+
     try:
         data = spotify_mod.exchange_code(code)
-        _spotify_tokens["access_token"]  = data["access_token"]
-        _spotify_tokens["refresh_token"] = data.get("refresh_token", "")
-        _spotify_tokens["expires_at"]    = _token_expiry(data)
-        logger.info("Spotify: token exchange OK")
+        _sessions[session_id] = {
+            "access_token":  data["access_token"],
+            "refresh_token": data.get("refresh_token", ""),
+            "expires_at":    _token_expiry(data),
+        }
+        _purge_expired_sessions()
+        logger.info("Spotify: token exchange OK for session %s", session_id[:8])
     except Exception as exc:
         logger.error("Spotify code exchange failed: %s", exc)
         return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=error&reason=exchange_failed")
-    return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=connected")
+
+    return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=connected&sid={session_id}")
 
 
 @app.get("/spotify/auth-url")
 async def spotify_auth_url():
     if not spotify_mod.CLIENT_ID:
         raise HTTPException(500, "SPOTIFY_CLIENT_ID env var not set on the server")
-    logger.info("Spotify auth URL requested (redirect_uri=%s)", spotify_mod.REDIRECT_URI)
-    return {"url": spotify_mod.get_auth_url(), "redirect_uri": spotify_mod.REDIRECT_URI}
+    session_id = str(uuid.uuid4())
+    url = spotify_mod.get_auth_url(state=session_id)
+    logger.info("Spotify auth URL issued for session %s", session_id[:8])
+    return {"url": url, "redirect_uri": spotify_mod.REDIRECT_URI, "session_id": session_id}
 
 
 @app.post("/spotify/logout")
-async def spotify_logout():
-    """Clear the server-side Spotify token (client calls this on disconnect)."""
-    _spotify_tokens.clear()
-    logger.info("Spotify: user logged out")
+async def spotify_logout(request: Request):
+    """Clear this user's Spotify session only — other users are unaffected."""
+    try:
+        sid = _get_session_id(request)
+        _sessions.pop(sid, None)
+        _session_locks.pop(sid, None)
+        logger.info("Spotify: session %s logged out", sid[:8])
+    except HTTPException:
+        pass
     return {"status": "ok"}
 
 
@@ -463,13 +495,14 @@ async def spotify_current(request: Request):
     ip = request.client.host if request.client else "0.0.0.0"
     if not _allow_request(f"spotify:{ip}", max_req=120, window=60.0):
         raise HTTPException(429, "Rate limit exceeded — slow down the polling interval")
-    access_token = await _ensure_valid_token()
+    sid = _get_session_id(request)
+    access_token = await _ensure_valid_token(sid)
     state = await _get_spotify_state(access_token)
     return JSONResponse(content=state)
 
 
 @app.get("/spotify/stream")
-async def spotify_stream(request: Request):
+async def spotify_stream(request: Request, sid: str = None):
     """
     Server-Sent Events endpoint. Pushes a JSON event whenever the playing
     track or active lyric line changes. Sends a heartbeat ping every cycle
@@ -484,6 +517,11 @@ async def spotify_stream(request: Request):
     ip = request.client.host if request.client else "0.0.0.0"
     logger.info("SSE: client connected (%s)", ip)
 
+    # Accept session_id from query param (EventSource) or header (fetch)
+    sid = sid or request.headers.get("X-Session-ID", "").strip()
+    if not sid:
+        raise HTTPException(401, "No session — please connect Spotify first")
+
     async def event_generator():
         last_key: tuple | None = None   # (track_id, lyric_line) — change detection
         consecutive_errors = 0
@@ -495,7 +533,7 @@ async def spotify_stream(request: Request):
 
             # ── Token ─────────────────────────────────────────────────────
             try:
-                access_token = await _ensure_valid_token()
+                access_token = await _ensure_valid_token(sid)
             except HTTPException as exc:
                 if exc.status_code == 401:
                     yield {
