@@ -50,6 +50,12 @@ _ALLOWED_ORIGINS = [
     for o in os.environ.get("ALLOWED_ORIGINS", _DEFAULT_ORIGINS).split(",")
     if o.strip()
 ]
+# Matches production + any Vercel preview URL (syntora-app-*.vercel.app)
+# alongside the explicit list above; localhost covered for local dev
+_ORIGIN_REGEX = (
+    r"https://syntora[a-zA-Z0-9\-]*\.vercel\.app"
+    r"|https?://(localhost|127\.0\.0\.1)(:\d+)?"
+)
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 _rate_store: dict[str, list[float]] = defaultdict(list)
@@ -302,6 +308,7 @@ app = FastAPI(title="Syntora API", version="3.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
+    allow_origin_regex=_ORIGIN_REGEX,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", SESSION_HEADER],
     allow_credentials=False,
