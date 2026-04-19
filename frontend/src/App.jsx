@@ -23,15 +23,12 @@ const POLL_ERROR   = 6000
 const SID_KEY      = 'syn_sid'
 
 // ── Session-aware fetch ───────────────────────────────────────────────────────
+// Send sid as a query param so it survives any proxy (Vercel → Render strips custom headers)
 function apiFetch(path, opts = {}) {
   const sid = localStorage.getItem(SID_KEY) || ''
-  return fetch(`${API}${path}`, {
-    ...opts,
-    headers: {
-      ...(opts.headers || {}),
-      ...(sid ? { 'x-session-id': sid } : {}),
-    },
-  })
+  const sep = path.includes('?') ? '&' : '?'
+  const url = sid ? `${API}${path}${sep}sid=${encodeURIComponent(sid)}` : `${API}${path}`
+  return fetch(url, opts)
 }
 
 function LiveLyrics({ authStatus, authError, redirectUri, onConnect, onDisconnect }) {

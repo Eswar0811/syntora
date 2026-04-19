@@ -164,7 +164,9 @@ def _new_session() -> tuple[str, _Session]:
 
 
 def _get_session(request: Request) -> _Session | None:
-    raw = request.headers.get(SESSION_HEADER, "").strip()
+    # Accept session ID from header (dev) or query param (production proxy-safe)
+    raw = request.headers.get(SESSION_HEADER, "").strip() or \
+          request.query_params.get("sid", "").strip()
     sid = _SAFE_SID_RE.sub("", raw)[:64]
     if not sid:
         return None
@@ -176,7 +178,8 @@ def _get_session(request: Request) -> _Session | None:
 
 
 def _remove_session(request: Request) -> None:
-    raw = request.headers.get(SESSION_HEADER, "").strip()
+    raw = request.headers.get(SESSION_HEADER, "").strip() or \
+          request.query_params.get("sid", "").strip()
     sid = _SAFE_SID_RE.sub("", raw)[:64]
     if sid:
         with _sessions_lock:
@@ -298,7 +301,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "x-session-id"],
+    allow_headers=["Content-Type"],
     allow_credentials=False,
 )
 
