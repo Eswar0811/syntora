@@ -32,9 +32,12 @@ export default function NowPlaying({ data, transport }: Props) {
   /* Drive progress bar via DOM to avoid inline style prop */
   useEffect(() => {
     if (!fillRef.current || data.progress_seconds == null) return;
-    const pct = Math.min(100, (data.progress_seconds / 240) * 100);
+    const duration = data.duration_seconds && data.duration_seconds > 0
+      ? data.duration_seconds
+      : 240;
+    const pct = Math.min(100, (data.progress_seconds / duration) * 100);
     fillRef.current.style.setProperty('--progress-pct', `${pct}%`);
-  }, [data.progress_seconds]);
+  }, [data.progress_seconds, data.duration_seconds]);
 
   const lang       = LANGUAGES.find((l) => l.key === activeLang) ?? LANGUAGES[0];
   const nativeText = data[lang.key] as string | undefined;

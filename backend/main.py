@@ -199,6 +199,15 @@ def _prune_sessions() -> None:
         dead = [k for k, v in _sessions.items() if v.last_active < cutoff]
         for k in dead:
             del _sessions[k]
+    # Remove rate-limit buckets for sessions that no longer exist
+    with _rate_lock:
+        active_keys = set()
+        with _sessions_lock:
+            for sid in _sessions:
+                active_keys.add(f"spotify:sid:{sid}")
+        stale = [k for k in _rate_store if k.startswith("spotify:sid:") and k not in active_keys]
+        for k in stale:
+            del _rate_store[k]
 
 
 def _persist_sessions() -> None:
@@ -540,13 +549,14 @@ async def _get_spotify_state(access_token: str, session: _Session) -> dict:
     idx = _line_index(lyrics_list, adjusted)
 
     result: dict = {
-        "is_playing":       True,
-        "song":             playback["song"],
-        "artist":           playback["artist"],
-        "progress_seconds": raw_progress,   # raw — frontend interpolates on top
-        "track_id":         playback.get("track_id", ""),
-        "source":           source,
-        "sync_offset":      _SYNC_OFFSET,   # tell frontend what offset we used
+        "is_playing":        True,
+        "song":              playback["song"],
+        "artist":            playback["artist"],
+        "progress_seconds":  raw_progress,   # raw — frontend interpolates on top
+        "duration_seconds":  playback.get("duration_seconds", 0),
+        "track_id":          playback.get("track_id", ""),
+        "source":            source,
+        "sync_offset":       _SYNC_OFFSET,   # tell frontend what offset we used
     }
 
     if detected_lang:

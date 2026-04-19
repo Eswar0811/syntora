@@ -3,6 +3,7 @@ export interface SpotifyCurrentResponse {
   song?: string;
   artist?: string;
   progress_seconds?: number;
+  duration_seconds?: number;
   track_id?: string;
   source?: 'lrclib' | 'whisper' | 'curated';
   detected_language?: string;

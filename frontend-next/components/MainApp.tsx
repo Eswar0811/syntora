@@ -20,8 +20,10 @@ export default function MainApp() {
   useEffect(() => {
     const spotify = searchParams.get('spotify');
     const reason  = searchParams.get('reason');
-    if (spotify === 'connected') {
-      markConnected();
+    const sid     = searchParams.get('sid') ?? '';
+
+    if (spotify === 'connected' && sid) {
+      markConnected(sid);
       setAuthStatus('authed');
     } else if (spotify === 'error') {
       setAuthStatus('error');
@@ -43,8 +45,7 @@ export default function MainApp() {
   }, []);
 
   const handleDisconnect = useCallback(async () => {
-    await spotifyLogout();
-    markDisconnected();
+    await spotifyLogout(); // spotifyLogout already calls markDisconnected()
     setAuthStatus('idle');
     setAuthError(null);
   }, []);

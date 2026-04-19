@@ -124,6 +124,7 @@ def get_currently_playing(access_token: str) -> dict | None:
         "song":             item.get("name", "Unknown"),
         "artist":           artists,
         "progress_seconds": data.get("progress_ms", 0) / 1000,
+        "duration_seconds": item.get("duration_ms", 0) / 1000,
         "is_playing":       True,
         "preview_url":      item.get("preview_url"),
         "track_id":         item.get("id"),
