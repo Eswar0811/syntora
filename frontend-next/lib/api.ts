@@ -5,7 +5,8 @@ const SID_KEY       = 'syntora_sid';
 // ── Session helpers ───────────────────────────────────────────────────────────
 
 export function isConnected(): boolean {
-  return typeof window !== 'undefined' && localStorage.getItem(CONNECTED_KEY) === 'true';
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(CONNECTED_KEY) === 'true' && Boolean(localStorage.getItem(SID_KEY));
 }
 
 export function markConnected(sid: string): void {

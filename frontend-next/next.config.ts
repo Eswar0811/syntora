@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next';
 
-const backendUrl = process.env.BACKEND_URL ?? 'http://localhost:8000';
+const backendUrl = process.env.BACKEND_URL ?? 'https://syntora-71a2.onrender.com';
 
 const nextConfig: NextConfig = {
   // All /api/* requests are forwarded to the FastAPI backend
