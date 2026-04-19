@@ -13,6 +13,7 @@ const LANG_DISPLAY = [
 const DETECTED_TO_LANG = { ta: 'tamil', hi: 'hindi', ml: 'malayalam', te: 'telugu' }
 
 const SOURCE_LABEL = {
+  lrclib:  { icon: '♪', text: 'Synced lyrics' },
   curated: { icon: '★', text: 'Curated lyrics' },
   whisper: { icon: '🎙', text: 'Audio transcription (Whisper)' },
 }

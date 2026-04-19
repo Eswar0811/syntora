@@ -283,8 +283,10 @@ async def _session_janitor():
 async def lifespan(_app: FastAPI):
     logger.info("Pre-loading engines…")
     get_engine()
+    get_hindi_engine()
+    get_malayalam_engine()
     get_telugu_engine()
-    logger.info("Engines ready.")
+    logger.info("All 4 engines ready.")
     _load_sessions()
     task1 = asyncio.create_task(_keep_alive())
     task2 = asyncio.create_task(_session_janitor())
@@ -301,7 +303,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", SESSION_HEADER],
     allow_credentials=False,
 )
 
@@ -570,11 +572,19 @@ async def _get_spotify_state(access_token: str, session: _Session) -> dict:
 
 @app.get("/spotify/current")
 async def spotify_current(request: Request):
-    ip = request.client.host if request.client else "0.0.0.0"
-    if not _allow_request(f"spotify:{ip}", max_req=120, window=60.0):
+    # Rate-limit per session (not IP) so multiple users behind the same NAT/proxy
+    # each get their own bucket of 120 req/min.
+    raw_sid = (request.headers.get(SESSION_HEADER, "") or
+               request.query_params.get("sid", "")).strip()
+    sid_clean = _SAFE_SID_RE.sub("", raw_sid)[:64]
+    rate_key  = f"spotify:sid:{sid_clean}" if sid_clean else \
+                f"spotify:ip:{request.client.host if request.client else '0.0.0.0'}"
+    if not _allow_request(rate_key, max_req=120, window=60.0):
         raise HTTPException(429, "Rate limit exceeded")
-    session = _get_session(request)
+    session      = _get_session(request)
     access_token = await _require_token(request)
+    if session is None:
+        raise HTTPException(401, "Session not found")
     state = await _get_spotify_state(access_token, session)
     return JSONResponse(content=state)
 
