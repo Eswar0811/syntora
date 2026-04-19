@@ -8,6 +8,7 @@ except ImportError:
     pass
 
 import asyncio
+import bisect
 import logging
 import os
 import re
@@ -125,7 +126,10 @@ class SongRequest(BaseModel):
 _token: dict = {}
 _token_lock: asyncio.Lock | None = None
 _SAFE_REASON_RE = re.compile(r"[^a-zA-Z0-9_\-]")
-_SYNC_OFFSET = 0.4
+
+# How far ahead of raw Spotify position to select lyrics (compensates for
+# total round-trip latency: Spotify API + Render→Vercel + browser render)
+_SYNC_OFFSET = 0.9
 
 
 def _get_token_lock() -> asyncio.Lock:
@@ -160,7 +164,7 @@ async def _ensure_valid_token() -> str:
     return _token["access_token"]
 
 
-# ── Self-ping keep-alive (prevents Render free tier sleeping) ─────────────────
+# ── Self-ping keep-alive ──────────────────────────────────────────────────────
 async def _keep_alive():
     import httpx
     host = os.environ.get("RENDER_EXTERNAL_URL", "")
@@ -191,7 +195,7 @@ async def lifespan(_app: FastAPI):
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Syntora API", version="3.0.0", lifespan=lifespan)
+app = FastAPI(title="Syntora API", version="3.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -334,6 +338,16 @@ def _detect_script_language(lyrics_list: list[dict]) -> str | None:
     return None
 
 
+def _line_index(lyrics_list: list[dict], position: float) -> int:
+    """Return index of the latest line whose time <= position (-1 if before first)."""
+    times = [l["time"] for l in lyrics_list]
+    return bisect.bisect_right(times, position) - 1
+
+
+# ── Last-known-good state (survives transient Spotify API errors) ─────────────
+_last_good: dict = {}
+
+
 # ── Spotify ───────────────────────────────────────────────────────────────────
 
 @app.get("/spotify/auth-url")
@@ -369,21 +383,32 @@ async def spotify_oauth_callback(code: str = None, error: str = None, state: str
 @app.post("/spotify/logout")
 async def spotify_logout():
     _token.clear()
+    _last_good.clear()
     return {"status": "ok"}
 
 
 async def _get_spotify_state(access_token: str) -> dict:
+    # ── Fetch playback from Spotify ───────────────────────────────────────────
     try:
         playback = spotify_mod.get_currently_playing(access_token)
     except Exception as exc:
+        # Return last known state on transient Spotify errors — no 502 to user
+        if _last_good:
+            logger.warning("Spotify error (using cached state): %s", exc)
+            return {**_last_good, "stale": True}
         raise HTTPException(502, f"Spotify API error: {exc}")
+
     if not playback:
+        _last_good.clear()
         return {"is_playing": False}
+
+    # ── Lyrics ────────────────────────────────────────────────────────────────
     lyrics_list   = lyrics_mod.get_lyrics(playback["song"], playback["artist"])
     source        = "lrclib"
     using_whisper = False
     no_preview    = False
     detected_lang: str | None = _detect_script_language(lyrics_list)
+
     if not lyrics_list:
         preview_url = playback.get("preview_url")
         if preview_url:
@@ -397,17 +422,23 @@ async def _get_spotify_state(access_token: str) -> dict:
                     source        = "whisper"
         else:
             no_preview = True
-    raw_progress = playback["progress_seconds"] + _SYNC_OFFSET
-    adjusted     = progress_in_preview(raw_progress) if using_whisper else raw_progress
-    line         = lyrics_mod.get_current_line(lyrics_list, adjusted)
+
+    raw_progress = playback["progress_seconds"]
+    adjusted     = progress_in_preview(raw_progress) if using_whisper else raw_progress + _SYNC_OFFSET
+
+    # ── Current + next line selection and pre-translation ─────────────────────
+    idx = _line_index(lyrics_list, adjusted)
+
     result: dict = {
         "is_playing":       True,
         "song":             playback["song"],
         "artist":           playback["artist"],
-        "progress_seconds": playback["progress_seconds"],
+        "progress_seconds": raw_progress,   # raw — frontend interpolates on top
         "track_id":         playback.get("track_id", ""),
         "source":           source,
+        "sync_offset":      _SYNC_OFFSET,   # tell frontend what offset we used
     }
+
     if detected_lang:
         result["detected_language"] = detected_lang
         result["detected_label"]    = _LANG_LABEL.get(detected_lang, detected_lang.upper())
@@ -415,9 +446,24 @@ async def _get_spotify_state(access_token: str) -> dict:
         result["whisper_transcribed"] = True
     if no_preview:
         result["no_preview"] = True
-    if line:
-        result["original"] = line["text"]
-        result.update(_get_translations(line["text"]))
+
+    # Current line
+    if idx >= 0 and lyrics_list:
+        current = lyrics_list[idx]
+        result["original"]   = current["text"]
+        result["line_time"]  = current["time"]
+        result.update(_get_translations(current["text"]))
+
+        # Next line — pre-translated so the frontend can switch instantly
+        if idx + 1 < len(lyrics_list):
+            nxt = lyrics_list[idx + 1]
+            result["next_original"]  = nxt["text"]
+            result["next_line_time"] = nxt["time"]
+            next_tr = _get_translations(nxt["text"])
+            for k, v in next_tr.items():
+                result[f"next_{k}"] = v
+
+    _last_good.update(result)
     return result
 
 

@@ -7,7 +7,12 @@ export interface SpotifyCurrentResponse {
   source?: 'lrclib' | 'whisper' | 'curated';
   detected_language?: string;
   detected_label?: string;
+  stale?: boolean;
+  sync_offset?: number;
+
+  // Current line
   original?: string;
+  line_time?: number;
   tamil?: string;
   tanglish?: string;
   hindi?: string;
@@ -16,6 +21,19 @@ export interface SpotifyCurrentResponse {
   manglish?: string;
   telugu?: string;
   tenglish?: string;
+
+  // Next line — pre-translated for instant transition
+  next_original?: string;
+  next_line_time?: number;
+  next_tamil?: string;
+  next_tanglish?: string;
+  next_hindi?: string;
+  next_hinglish?: string;
+  next_malayalam?: string;
+  next_manglish?: string;
+  next_telugu?: string;
+  next_tenglish?: string;
+
   message?: string;
 }
 

@@ -40,14 +40,21 @@ export function useSpotifyPoll({ enabled, onUnauthorized }: UseSpotifyPollOption
       if (res.status === 429) {
         errCountRef.current += 1;
         nextDelay = Math.min(12_000 * errCountRef.current, MAX_BACKOFF_MS);
-        setError('Rate limited — retrying shortly');
+        // Don't set error UI — just back off silently
+        return;
+      }
+
+      if (res.status >= 500) {
+        // 502/503/504 — Spotify API blip. Retry silently, keep showing last data.
+        errCountRef.current += 1;
+        nextDelay = Math.min(2_000 * Math.pow(2, errCountRef.current - 1), 16_000);
         return;
       }
 
       if (!res.ok) {
         errCountRef.current += 1;
         nextDelay = Math.min(3_000 * Math.pow(2, errCountRef.current - 1), MAX_BACKOFF_MS);
-        setError(`Server error ${res.status} — retrying`);
+        setError(`Error ${res.status} — retrying`);
         return;
       }
 
@@ -60,6 +67,8 @@ export function useSpotifyPoll({ enabled, onUnauthorized }: UseSpotifyPollOption
       if ((err as Error).name === 'AbortError') return;
       errCountRef.current += 1;
       nextDelay = Math.min(3_000 * Math.pow(2, errCountRef.current - 1), MAX_BACKOFF_MS);
+      // Only show error when no data yet — otherwise keep last lyrics visible
+      if (!enabledRef.current) return;
       setError('Connection error — retrying');
     } finally {
       inflightRef.current = false;
