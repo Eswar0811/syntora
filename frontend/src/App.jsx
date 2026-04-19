@@ -20,6 +20,19 @@ const SOURCE_LABEL = {
 const POLL_PLAYING = 1000
 const POLL_IDLE    = 3000
 const POLL_ERROR   = 6000
+const SID_KEY      = 'syn_sid'
+
+// ── Session-aware fetch ───────────────────────────────────────────────────────
+function apiFetch(path, opts = {}) {
+  const sid = localStorage.getItem(SID_KEY) || ''
+  return fetch(`${API}${path}`, {
+    ...opts,
+    headers: {
+      ...(opts.headers || {}),
+      ...(sid ? { 'x-session-id': sid } : {}),
+    },
+  })
+}
 
 function LiveLyrics({ authStatus, authError, redirectUri, onConnect, onDisconnect }) {
   const authed = authStatus === 'authed'
@@ -46,7 +59,7 @@ function LiveLyrics({ authStatus, authError, redirectUri, onConnect, onDisconnec
       abortRef.current = controller
 
       try {
-        const r = await fetch(`${API}/spotify/current`, { signal: controller.signal })
+        const r = await apiFetch('/spotify/current', { signal: controller.signal })
         if (r.status === 401) { onDisconnect(); return }
         if (r.status === 429) { timerRef.current = setTimeout(doPoll, POLL_ERROR * 2); return }
         if (!r.ok) throw new Error(`Server error ${r.status}`)
@@ -86,7 +99,10 @@ function LiveLyrics({ authStatus, authError, redirectUri, onConnect, onDisconnec
           {authStatus === 'error' && (
             <div className="spotify-err">
               {authError === 'access_denied' && (
-                <p>You denied access. Click Connect and approve the permissions to continue.</p>
+                <p>
+                  Spotify blocked the login — the app may not have approved access for your account yet.
+                  Contact the app owner to be added, or try again.
+                </p>
               )}
               {authError === 'exchange_failed' && (
                 <p>
@@ -98,7 +114,7 @@ function LiveLyrics({ authStatus, authError, redirectUri, onConnect, onDisconnec
                 </p>
               )}
               {authError === 'cannot_reach_server' && (
-                <p>Cannot reach the backend server. Make sure it is running on port 8000.</p>
+                <p>Cannot reach the backend server. Please wait a moment and try again.</p>
               )}
               {(!authError || !['access_denied', 'exchange_failed', 'cannot_reach_server'].includes(authError)) && (
                 <p>
@@ -221,27 +237,57 @@ function NowPlaying({ data }) {
 }
 
 export default function App() {
-  const [authStatus,  setAuthStatus]  = useState('idle')
+  const [authStatus,  setAuthStatus]  = useState('checking')  // checking|idle|authed|exchanging|error
   const [authError,   setAuthError]   = useState('')
   const [redirectUri, setRedirectUri] = useState('http://127.0.0.1:8000/callback')
 
+  // On mount: handle OAuth return OR restore existing session
   useEffect(() => {
     const params  = new URLSearchParams(window.location.search)
     const spotify = params.get('spotify')
-    if (!spotify) return
-    const reason = params.get('reason') || ''
-    window.history.replaceState({}, '', '/')
-    if (spotify === 'connected') {
-      setAuthStatus('authed')
-    } else {
-      setAuthError(reason)
-      setAuthStatus('error')
+
+    if (spotify) {
+      // Coming back from Spotify OAuth
+      const reason = params.get('reason') || ''
+      const sid    = params.get('sid')    || ''
+      window.history.replaceState({}, '', '/')
+      if (spotify === 'connected' && sid) {
+        localStorage.setItem(SID_KEY, sid)
+        setAuthStatus('authed')
+      } else {
+        localStorage.removeItem(SID_KEY)
+        setAuthError(reason)
+        setAuthStatus('error')
+      }
+      return
     }
+
+    // No OAuth return — check if an existing session is still valid
+    const sid = localStorage.getItem(SID_KEY)
+    if (!sid) {
+      setAuthStatus('idle')
+      return
+    }
+    apiFetch('/spotify/status')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.authed) {
+          setAuthStatus('authed')
+        } else {
+          localStorage.removeItem(SID_KEY)
+          setAuthStatus('idle')
+        }
+      })
+      .catch(() => {
+        // Server unreachable — stay idle rather than showing error
+        localStorage.removeItem(SID_KEY)
+        setAuthStatus('idle')
+      })
   }, [])
 
   function handleConnect() {
     setAuthStatus('exchanging')
-    fetch(`${API}/spotify/auth-url`)
+    apiFetch('/spotify/auth-url')
       .then(r => { if (!r.ok) throw new Error('server_error'); return r.json() })
       .then(d => {
         if (d.redirect_uri) setRedirectUri(d.redirect_uri)
@@ -251,10 +297,14 @@ export default function App() {
   }
 
   async function handleDisconnect() {
-    fetch(`${API}/spotify/logout`, { method: 'POST' }).catch(() => {})
+    apiFetch('/spotify/logout', { method: 'POST' }).catch(() => {})
+    localStorage.removeItem(SID_KEY)
     setAuthStatus('idle')
     setAuthError('')
   }
+
+  // Show nothing while checking stored session to avoid flicker
+  if (authStatus === 'checking') return null
 
   return (
     <div className="app">

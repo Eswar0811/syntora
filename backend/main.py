@@ -9,12 +9,15 @@ except ImportError:
 
 import asyncio
 import bisect
+import json
 import logging
 import os
 import re
+import secrets
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field as _dc_field
 from threading import Lock
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
@@ -122,46 +125,130 @@ class SongRequest(BaseModel):
         return _sanitize(v)
 
 
-# ── Single-user token store ───────────────────────────────────────────────────
-_token: dict = {}
-_token_lock: asyncio.Lock | None = None
+# ── Per-user session store ────────────────────────────────────────────────────
 _SAFE_REASON_RE = re.compile(r"[^a-zA-Z0-9_\-]")
+_SAFE_SID_RE    = re.compile(r"[^A-Za-z0-9_\-]")
+SESSION_HEADER  = "x-session-id"
+_SESSION_TTL    = 7200   # seconds of inactivity before a session expires
+_TOKEN_FILE     = Path("/tmp/syntora_sess.json")
 
 # How far ahead of raw Spotify position to select lyrics (compensates for
 # total round-trip latency: Spotify API + Render→Vercel + browser render)
 _SYNC_OFFSET = 0.9
 
 
-def _get_token_lock() -> asyncio.Lock:
-    global _token_lock
-    if _token_lock is None:
-        _token_lock = asyncio.Lock()
-    return _token_lock
+@dataclass
+class _Session:
+    access_token:  str  = ""
+    refresh_token: str  = ""
+    expires_at:    float = 0.0
+    last_active:   float = _dc_field(default_factory=time.time)
+    last_good:     dict  = _dc_field(default_factory=dict)
+
+
+_sessions:      dict[str, _Session] = {}
+_sessions_lock: Lock                 = Lock()
 
 
 def _token_expiry(data: dict) -> float:
     return time.time() + data.get("expires_in", 3600) - 60
 
 
-async def _ensure_valid_token() -> str:
-    if not _token or not _token.get("access_token"):
+def _new_session() -> tuple[str, _Session]:
+    sid = secrets.token_urlsafe(32)
+    s   = _Session()
+    with _sessions_lock:
+        _sessions[sid] = s
+    _persist_sessions()
+    return sid, s
+
+
+def _get_session(request: Request) -> _Session | None:
+    raw = request.headers.get(SESSION_HEADER, "").strip()
+    sid = _SAFE_SID_RE.sub("", raw)[:64]
+    if not sid:
+        return None
+    with _sessions_lock:
+        s = _sessions.get(sid)
+        if s:
+            s.last_active = time.time()
+    return s
+
+
+def _remove_session(request: Request) -> None:
+    raw = request.headers.get(SESSION_HEADER, "").strip()
+    sid = _SAFE_SID_RE.sub("", raw)[:64]
+    if sid:
+        with _sessions_lock:
+            _sessions.pop(sid, None)
+        _persist_sessions()
+
+
+def _prune_sessions() -> None:
+    cutoff = time.time() - _SESSION_TTL
+    with _sessions_lock:
+        dead = [k for k, v in _sessions.items() if v.last_active < cutoff]
+        for k in dead:
+            del _sessions[k]
+
+
+def _persist_sessions() -> None:
+    try:
+        with _sessions_lock:
+            data = {
+                sid: {
+                    "access_token":  s.access_token,
+                    "refresh_token": s.refresh_token,
+                    "expires_at":    s.expires_at,
+                    "last_active":   s.last_active,
+                }
+                for sid, s in _sessions.items()
+            }
+        _TOKEN_FILE.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
+def _load_sessions() -> None:
+    try:
+        if not _TOKEN_FILE.exists():
+            return
+        raw   = json.loads(_TOKEN_FILE.read_text())
+        cutoff = time.time() - _SESSION_TTL
+        loaded = 0
+        for sid, vals in raw.items():
+            if vals.get("last_active", 0) > cutoff:
+                _sessions[sid] = _Session(
+                    access_token  = vals.get("access_token", ""),
+                    refresh_token = vals.get("refresh_token", ""),
+                    expires_at    = vals.get("expires_at", 0.0),
+                    last_active   = vals.get("last_active", time.time()),
+                )
+                loaded += 1
+        if loaded:
+            logger.info("Restored %d Spotify session(s) from disk", loaded)
+    except Exception as exc:
+        logger.warning("Could not load sessions from disk: %s", exc)
+
+
+async def _require_token(request: Request) -> str:
+    s = _get_session(request)
+    if not s or not s.access_token:
         raise HTTPException(401, "Not authenticated — please connect Spotify")
-    if _token.get("expires_at", 0) > time.time():
-        return _token["access_token"]
-    async with _get_token_lock():
-        if _token.get("expires_at", 0) > time.time():
-            return _token["access_token"]
-        try:
-            data = spotify_mod.refresh_access_token(_token["refresh_token"])
-            _token["access_token"] = data["access_token"]
-            _token["expires_at"]   = _token_expiry(data)
-            if "refresh_token" in data:
-                _token["refresh_token"] = data["refresh_token"]
-            logger.info("Spotify token refreshed")
-        except Exception as exc:
-            _token.clear()
-            raise HTTPException(401, f"Token refresh failed — please reconnect: {exc}")
-    return _token["access_token"]
+    if s.expires_at > time.time():
+        return s.access_token
+    try:
+        data = spotify_mod.refresh_access_token(s.refresh_token)
+        s.access_token = data["access_token"]
+        s.expires_at   = _token_expiry(data)
+        if "refresh_token" in data:
+            s.refresh_token = data["refresh_token"]
+        logger.info("Spotify token refreshed for session")
+        _persist_sessions()
+    except Exception as exc:
+        _remove_session(request)
+        raise HTTPException(401, f"Token refresh failed — please reconnect: {exc}")
+    return s.access_token
 
 
 # ── Self-ping keep-alive ──────────────────────────────────────────────────────
@@ -182,15 +269,25 @@ async def _keep_alive():
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
+async def _session_janitor():
+    while True:
+        await asyncio.sleep(600)
+        _prune_sessions()
+        _persist_sessions()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info("Pre-loading engines…")
     get_engine()
     get_telugu_engine()
     logger.info("Engines ready.")
-    task = asyncio.create_task(_keep_alive())
+    _load_sessions()
+    task1 = asyncio.create_task(_keep_alive())
+    task2 = asyncio.create_task(_session_janitor())
     yield
-    task.cancel()
+    task1.cancel()
+    task2.cancel()
     logger.info("Shutting down Syntora API.")
 
 
@@ -201,7 +298,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "x-session-id"],
     allow_credentials=False,
 )
 
@@ -344,8 +441,7 @@ def _line_index(lyrics_list: list[dict], position: float) -> int:
     return bisect.bisect_right(times, position) - 1
 
 
-# ── Last-known-good state (survives transient Spotify API errors) ─────────────
-_last_good: dict = {}
+# _last_good is now per-session (stored on _Session.last_good)
 
 
 # ── Spotify ───────────────────────────────────────────────────────────────────
@@ -367,39 +463,41 @@ async def spotify_oauth_callback(code: str = None, error: str = None, state: str
         return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=error&reason=no_code")
     try:
         data = spotify_mod.exchange_code(code)
-        _token.clear()
-        _token.update({
-            "access_token":  data["access_token"],
-            "refresh_token": data.get("refresh_token", ""),
-            "expires_at":    _token_expiry(data),
-        })
-        logger.info("Spotify token exchange OK")
+        sid, s = _new_session()
+        s.access_token  = data["access_token"]
+        s.refresh_token = data.get("refresh_token", "")
+        s.expires_at    = _token_expiry(data)
+        logger.info("Spotify token exchange OK, session=%s…", sid[:8])
     except Exception as exc:
         logger.error("Token exchange failed: %s", exc)
         return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=error&reason=exchange_failed")
-    return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=connected")
+    return RedirectResponse(url=f"{_FRONTEND_URL}?spotify=connected&sid={sid}")
+
+
+@app.get("/spotify/status")
+async def spotify_status(request: Request):
+    s = _get_session(request)
+    return {"authed": bool(s and s.access_token)}
 
 
 @app.post("/spotify/logout")
-async def spotify_logout():
-    _token.clear()
-    _last_good.clear()
+async def spotify_logout(request: Request):
+    _remove_session(request)
     return {"status": "ok"}
 
 
-async def _get_spotify_state(access_token: str) -> dict:
+async def _get_spotify_state(access_token: str, session: _Session) -> dict:
     # ── Fetch playback from Spotify ───────────────────────────────────────────
     try:
         playback = spotify_mod.get_currently_playing(access_token)
     except Exception as exc:
-        # Return last known state on transient Spotify errors — no 502 to user
-        if _last_good:
+        if session.last_good:
             logger.warning("Spotify error (using cached state): %s", exc)
-            return {**_last_good, "stale": True}
+            return {**session.last_good, "stale": True}
         raise HTTPException(502, f"Spotify API error: {exc}")
 
     if not playback:
-        _last_good.clear()
+        session.last_good.clear()
         return {"is_playing": False}
 
     # ── Lyrics ────────────────────────────────────────────────────────────────
@@ -463,7 +561,7 @@ async def _get_spotify_state(access_token: str) -> dict:
             for k, v in next_tr.items():
                 result[f"next_{k}"] = v
 
-    _last_good.update(result)
+    session.last_good.update(result)
     return result
 
 
@@ -472,8 +570,9 @@ async def spotify_current(request: Request):
     ip = request.client.host if request.client else "0.0.0.0"
     if not _allow_request(f"spotify:{ip}", max_req=120, window=60.0):
         raise HTTPException(429, "Rate limit exceeded")
-    access_token = await _ensure_valid_token()
-    state = await _get_spotify_state(access_token)
+    session = _get_session(request)
+    access_token = await _require_token(request)
+    state = await _get_spotify_state(access_token, session)
     return JSONResponse(content=state)
 
 
